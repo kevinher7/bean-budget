@@ -1,13 +1,15 @@
 # Initial ledger server
 
-Use Node 22.22.3 and npm 10.9.8. From the repository root:
+For daily local development, activate direnv (or `nix develop path:./nix`) and run `npm run dev:server`. It creates a persistent private token in `.local/server-token` when `BEAN_TOKEN` is unset and defaults to `.local/bean-budget.sqlite`; both are ignored. Existing environment overrides are respected. The manual `server` workflow below is unchanged.
+
+Use Node 22 (at least 22.22.3) and npm 10. The pinned development shell currently supplies Node 22.23.3 and npm 10.9.9; the original implementation used Node 22.22.3 and npm 10.9.8. From the repository root:
 
 ```sh
 npm ci
 export BEAN_TOKEN="$(openssl rand -hex 32)"
 export BEAN_DATABASE="$PWD/bean-budget.sqlite"
 npm run server
-# For automatic restarts while developing: npm run dev:server
+# For automatic restarts with these overrides: npm run dev:server
 ```
 
 Keep the token private and retain it in your deployment's secret configuration. There is no default token. Settings are read through Effect Config: `BEAN_TOKEN` (required, nonempty and redacted), `BEAN_DATABASE` (default `bean-budget.sqlite`), `BEAN_HOST` (default `127.0.0.1`), `BEAN_PORT` (default `3000`). Create the database parent directory beforehand. The server closes SQLite on shutdown and listen failure. Binding another host exposes plain HTTP: use a private connection or a TLS reverse proxy before remote use. One bearer token controls one owner's entire budget.

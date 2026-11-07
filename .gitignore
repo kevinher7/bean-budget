@@ -1,3 +1,6 @@
 node_modules/
 
 bean-budget.sqlite*
+
+.direnv/
+.local/

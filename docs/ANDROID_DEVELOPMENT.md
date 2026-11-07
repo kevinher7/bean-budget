@@ -1,6 +1,6 @@
 # Android development environment
 
-Research date: 7 November 2026. This guide separates preparing the host, starting a virtual device, compiling the app, and reloading JavaScript. Bean Budget currently has no mobile application, so the Expo commands below describe the workflow to implement when `apps/mobile` is added. No SDK downloads, emulator boot, or changes to the existing Spend Bean virtual device were performed for this research.
+Research date: 7 November 2026. This guide separates preparing the host, starting a virtual device, compiling the app, and reloading JavaScript. Bean Budget now owns a pinned `nix/` development shell, direnv activation, and Android doctor/setup/emulator scripts (see the README quick start). It still has no mobile application, so the Expo commands below describe the workflow to implement when `apps/mobile` is added. No SDK downloads, emulator boot, or changes to the existing Spend Bean virtual device were performed for this research.
 
 ## Recommended setup
 
@@ -45,13 +45,13 @@ emulator -list-avds
 emulator -accel-check
 ```
 
-This temporarily borrows the existing working shell. Bean Budget should own its shell definition before mobile development starts, so it does not depend on a sibling checkout. Run `exit` to leave the manual shell.
+This temporarily borrows the existing working shell. Bean Budget now owns its shell definition: use `direnv allow` or `nix develop path:./nix` instead of borrowing Spend Bean’s shell. Run `exit` to leave the manual shell.
 
 ## One time preparation for Bean Budget
 
-1. Add a small Bean Budget Nix shell for the project's Node version and JDK 17, and an `.envrc` that activates it and exposes the existing SDK. Allow `ANDROID_HOME` and `ANDROID_AVD_HOME` overrides, defaulting to the inspected macOS paths. Keep direnv optional: provide a documented `nix develop` entry path with the same SDK/AVD exports. Commit the Nix lockfile. Do not put SDK downloads or license acceptance into shell startup.
-2. Verify the SDK components against the selected mobile Expo version. Existing SDK 58 components appear suitable; a native build remains the final check. Android Studio is an optional graphical SDK/device manager for this existing command-line installation, rather than a necessary second SDK installation.
-3. Create a dedicated `bean-budget` ARM64 virtual device. Preserve `spend-bean` and its app data. With the environment active, the command below uses the already installed image; it is a setup command, not something executed during this research:
+1. Run `direnv allow` in the repository root. The pinned `nix/` shell supplies Node 22 and JDK 17 and exposes the existing SDK. Alternatively use `nix develop path:./nix`. Both respect `ANDROID_HOME` and `ANDROID_AVD_HOME` overrides; activation does not install SDKs or accept licenses.
+2. Run `npm run android:doctor` and verify the SDK components against the selected mobile Expo version. Existing SDK 58 components appear suitable; a native build remains the final check. Android Studio is an optional graphical SDK/device manager for this existing command-line installation, rather than a necessary second SDK installation.
+3. Run `npm run android:setup` to create a dedicated `bean-budget` ARM64 virtual device from the installed image (existing devices are kept). Preserve `spend-bean` and its app data. With the environment active, the command below uses the already installed image; it is a setup command, not something executed during this research:
 
 ```sh
 printf 'no\n' | avdmanager create avd \
@@ -117,12 +117,16 @@ Local HTTP must be permitted by the development Android build. Spend Bean's gene
 
 Use a development-only backend credential. Do not place a bearer token in an `EXPO_PUBLIC_*` variable: those values become client bundle data. A public API base URL is appropriate there. The first client can accept the credential through its connection screen and keep it in platform secure storage.
 
-## Proposed command interface
+## Command interface
 
-When mobile is implemented, expose these root commands. These names are a proposal, not scripts currently available:
+Available now:
 
-- `npm run android:doctor`: read-only checks for Node, Java, SDK tools/components, acceleration, available AVDs and connected devices, with actionable fixes. Do not print secrets or mutate SDK state.
-- `npm run android:emulator`: start the configured Bean Budget AVD, reusing an already running instance when possible and waiting for completed boot.
+- `npm run android:doctor`: checks Node, npm, Java, SDK tools, acceleration, the selected system image, available AVDs and connected devices. It installs nothing. Device inventory uses adb, which may start its local daemon.
+- `npm run android:setup`: explicitly creates the configured AVD if missing, without overwriting devices or downloading an image.
+- `npm run android:emulator`: starts the configured Bean Budget AVD in the foreground or reports its running device serial. It does not wait for completed boot; use the boot check above before building.
+
+`BEAN_AVD` defaults to `bean-budget`; `BEAN_ANDROID_IMAGE` defaults to the inspected API 37 Google APIs ARM64 image. The following commands remain proposals until mobile is implemented:
+
 - `npm run android:build`: select a device, configure port reversal, compile/install the dev app, and start Metro.
 - `npm run android:dev`: select a running device, restore port reversal, and start Metro for an existing dev build. If the native app is missing, explain that `android:build` is needed.
 
