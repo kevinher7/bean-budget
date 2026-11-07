@@ -82,7 +82,7 @@ Each application initially owns its design system implementation. Mobile screens
 
 The applications supply platform-specific persistence and runtime implementations. Sharing domain types does not require identical client and server database schemas. Local pending operations and sync metadata belong to mobile storage; operation receipts and the authoritative change feed belong to server storage.
 
-Money uses bounded integers with an explicit currency scale. Financial dates remain distinct from timestamps. Migration must explicitly convert Actual's hundredths-based amounts, including JPY amounts, and preserve the intended Asia/Tokyo calendar behavior. Exact budget semantics and the migration format remain to be specified.
+Money uses bounded integers with an explicit currency scale (JPY whole yen, USD cents). Financial dates remain distinct from timestamps. Migration must explicitly convert Actual's hundredths-based amounts, including JPY amounts, and preserve the intended Asia/Tokyo calendar behavior. The tracking-budget rules below define the agreed foundation; the migration format remains to be specified.
 
 ## Effect as the application orchestration layer
 
@@ -164,10 +164,68 @@ Before using Bean Budget as the primary ledger, compare representative Actual ba
 
 - Web framework, routing, component libraries, and concrete design tokens.
 - Authentication, device registration, and deployment configuration.
-- Exact budgeting semantics, currency scale, and migration requirements.
+- Actual migration requirements and remaining forecast/reconciliation policies.
 - Database schemas and transaction ownership in each runtime.
 - Sync batch format, conflict recovery, retention, and resnapshot behavior.
 - Notification transport and mail scheduling cadence.
 - Matching imported purchases with manually entered transactions.
 
 Resolve these as their implementation slices require them. Preserve the agreed boundaries without adding speculative infrastructure.
+
+## Agreed ledger and tracking-budget foundation
+
+Decision date: 8 November 2026. These rules describe the next implementation, not capabilities already present in the initial ledger server.
+
+### Ledger ownership
+
+One server stores one owner's data. Accounts have a name and currency, with no required account type. Balances derive from transactions, including explicit opening entries; negative account balances are valid. Transactions do not belong to a budget. Multiple independent budgets may evaluate the same ledger without copying it.
+
+Support JPY and USD using bounded integer minor units: input ¥1234 stores 1234 JPY, while $12.34 stores 1234 USD cents. Parse decimal input text into integer units and format at the UI boundary. Account currency determines transaction currency. Never sum different currencies into an unqualified total. Cross-currency transfers record both actual amounts; automatic FX conversion is outside the initial scope.
+
+Transactions carry an account, financial date, signed amount, optional payee/category, pending or posted status, source (initially manual or mail-bean), and optional notes. Income is positive and expenses negative. Transfers link outgoing and incoming entries and commit atomically. Opening entries and transfers do not count as ordinary budget income or spending. Posted balances exclude pending entries; projected balances include them. Pending discretionary purchases consume category availability immediately. Posting them must not consume it again. Posting is distinct from future bank reconciliation.
+
+Payees and categories are core concepts. Uncategorized transactions are valid and must remain visible for review. Mail-specific merchant parsing, normalization, account matching, and import orchestration belong to the mail module. Preserve structured import identities separately from source labels and notes, committing duplicate protection with financial changes. Payee-to-category defaults and their editing UI can follow later; historical categorization changes require an explicit user action.
+
+### Budget periods and allocations
+
+A budget defines its name, currency, included accounts, and monthly start day. Its accounts use its currency; conversion between currencies is not implicit. Categories are shared ledger classifications, while category allocations are specific to a budget and period and may change during that period.
+
+A period has explicit financial-date boundaries, an inclusive start and exclusive next start. Day 1 means a calendar month. Day 25 means the 25th through the 24th of the next month. Clamp start days 29–31 independently to each month's last valid day, deriving the end from the following start. Calculations accept explicit dates rather than reading the clock.
+
+This is tracking budgeting over expected income, not cash-constrained envelope budgeting. Expected scheduled income minus scheduled commitments establishes fresh discretionary funds. Allow period-specific income forecasts and occurrence amount overrides for variable salary and estimated bills. Forecasts are not money received and should be presented distinctly from posted totals.
+
+For each period:
+
+```text
+assignable = expected income - committed expenses
+           + previous unassigned funds - previous category overspending
+unassigned = assignable - current period category allocations
+category remaining = positive previous category remainder
+                   + current allocation - net discretionary spending
+```
+
+Refunds reduce net spending. Positive category remainders stay assigned to the same category in the next period. Negative category remainders reset to zero and reduce the next period's assignable funds by their absolute value. Signed unassigned funds carry separately. Never add retained positive category funds to the unassigned pool as well.
+
+Example: ¥200,000 expected income and ¥80,000 commitments yield ¥120,000 fresh assignable funds. Allocating ¥40,000 to food, ¥20,000 to entertainment, and ¥30,000 to shopping leaves ¥30,000 unassigned. Food spending of ¥43,000 leaves −¥3,000; entertainment spending of ¥15,000 leaves ¥5,000. Next period, food carries zero, entertainment carries ¥5,000, and assignable funds receive a −¥3,000 overspending adjustment plus the previous unassigned remainder.
+
+Derive carryover in period order rather than creating financial transactions or relying on a midnight rollover job. Historical edits recalculate affected subsequent periods. Persisted summaries, if introduced later, are rebuildable projections.
+
+### Schedules and commitment fulfillment
+
+Schedules are separate recurring templates for income or expenses. A scheduled occurrence records one expected payment, its financial date, account, amount, payee/category, and optional link to its actual transaction. Occurrences preserve period expectations: editing a schedule must not silently rewrite past occurrences. Generation uses a stable schedule-and-occurrence identity to prevent duplicate entries on retries. Monthly recurrence uses the same explicit short-month policy.
+
+An occurrence may generate a pending transaction. Mail or manual confirmation can fulfill that occurrence rather than create another purchase. Automatic matching requires an explicit reconciliation policy; do not infer that import deduplication solves matching.
+
+Within each budget, a transaction fulfilling a reserved scheduled commitment must not also consume a discretionary allocation. It can still retain a category for reporting. Commitment selection belongs to the budget, allowing independent plans over the same ledger. A posted bill replaces its estimate for that occurrence: an estimated ¥8,000 bill posting at ¥9,000 reduces assignable funds by a further ¥1,000, not ¥9,000. Exact treatment of partial payments, unmatched occurrences, and income forecast deviations remains to be specified before implementing those cases.
+
+### Implementation ownership and order
+
+Keep pure money, date, ledger, and budget rules in packages/budget; network commands and responses in packages/protocol; database migrations, persistence, and orchestration in apps/server. Retain compact modules and meaningful dependency boundaries rather than per-entity services.
+
+Implement the ledger extensions first, then schedules and occurrence matching, then budget persistence/calculations and period-summary commands. Mail integration, client UI, full synchronization, and Actual migration remain separate work. Add immutable migrations instead of changing applied migrations. Preserve existing transaction retry protection and extend atomicity and validation to new financial commands.
+
+### Relational storage and resource API
+
+Categories, payees, schedules, scheduled occurrences, budgets, budget account membership, reserved schedules, budget periods, and category allocations use explicit relational tables. Foreign keys enforce references; schedule/month and budget/month/category keys enforce identity. Transactions reference categories and payees. Budget periods are identified by budget/month, without constructed plan IDs.
+
+The server exposes resource routes for these concepts rather than a combined planning-data endpoint or generic command endpoint. Read queries gather the selected budget's inputs; schedules.ts and budgets.ts own their cohesive read queries while ledger.ts coordinates atomic mutations and receipts. See SERVER.md for the route contract. Migration 3 preserves existing JSON records and receipts, verifies their relationships, and removes the former catch-all table atomically. Applied migrations 1 and 2 remain unchanged.

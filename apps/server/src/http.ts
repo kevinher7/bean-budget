@@ -3,7 +3,12 @@ import { timingSafeEqual } from "node:crypto";
 import { layer as nodeHttpServerLayer } from "@effect/platform-node/NodeHttpServer";
 import { ByteSize, Effect, Schema } from "effect";
 import { MaxBodySize } from "effect/http/HttpIncomingMessage";
-import { addAll as addRoutes, route, toHttpEffect } from "effect/http/HttpRouter";
+import {
+  addAll as addRoutes,
+  route,
+  toHttpEffect,
+  params as routeParams,
+} from "effect/http/HttpRouter";
 import { serveEffect } from "effect/http/HttpServer";
 import { isHttpServerError } from "effect/http/HttpServerError";
 import {
@@ -13,15 +18,124 @@ import {
 } from "effect/http/HttpServerRequest";
 import { json as jsonResponse } from "effect/http/HttpServerResponse";
 import { isSqlError } from "effect/sql/SqlError";
-import { CreateAccount, CreateTransaction, TransactionQuery } from "@bean-budget/protocol";
+import {
+  CreateAccount,
+  CreateTransaction,
+  TransactionQuery,
+  Command,
+  SummaryQuery,
+} from "@bean-budget/protocol";
 import { LedgerError } from "./database.ts";
-import { accounts, createAccount, createTransaction, transactions } from "./ledger.ts";
+import { readBudgets, readPeriods } from "./budgets.ts";
+import { readSchedules, readOccurrences } from "./schedules.ts";
+import {
+  accounts,
+  createAccount,
+  createTransaction,
+  transactions,
+  command,
+  categories,
+  payees,
+  summary,
+} from "./ledger.ts";
 
 export class ServerError extends Error {
   readonly _tag = "ServerError";
 }
 
 const routes = addRoutes([
+  route(
+    "GET",
+    "/categories",
+    Effect.flatMap(categories, (value) => jsonResponse(value)),
+  ),
+  route(
+    "GET",
+    "/payees",
+    Effect.flatMap(payees, (value) => jsonResponse(value)),
+  ),
+  route(
+    "GET",
+    "/budgets",
+    Effect.flatMap(readBudgets(), (value) => jsonResponse(value)),
+  ),
+  route(
+    "GET",
+    "/schedules",
+    Effect.flatMap(readSchedules(), (value) => jsonResponse(value)),
+  ),
+  route(
+    "GET",
+    "/scheduled-occurrences",
+    Effect.flatMap(readOccurrences(), (value) => jsonResponse(value)),
+  ),
+  ...(
+    [
+      { method: "POST", path: "/categories", type: "category" },
+      { method: "POST", path: "/payees", type: "payee" },
+      { method: "POST", path: "/budgets", type: "budget" },
+      { method: "POST", path: "/schedules", type: "schedule" },
+      { method: "PUT", path: "/budgets/:budgetId/periods/:month", type: "plan" },
+      { method: "POST", path: "/schedules/:scheduleId/occurrences", type: "generate" },
+      { method: "PUT", path: "/scheduled-occurrences/:id", type: "occurrence" },
+      {
+        method: "POST",
+        path: "/scheduled-occurrences/:occurrenceId/pending-transaction",
+        type: "pendingOccurrence",
+      },
+      { method: "POST", path: "/scheduled-occurrences/:occurrenceId/match", type: "match" },
+      { method: "PUT", path: "/transactions/:id", type: "editTransaction" },
+      { method: "POST", path: "/transfers", type: "transfer" },
+    ] as const
+  ).map(({ method, path, type }) =>
+    route(
+      method,
+      path,
+      Effect.gen(function* () {
+        const body = yield* schemaBodyJson(Schema.Record(Schema.String, Schema.Unknown)).pipe(
+          Effect.mapError((error) =>
+            Schema.isSchemaError(error) ? new LedgerError(400, "Invalid request") : error,
+          ),
+        );
+        const params = yield* routeParams;
+        const value =
+          type === "plan"
+            ? {
+                operationId: body.operationId,
+                value: { ...body, budgetId: params.budgetId, month: params.month },
+              }
+            : { ...body, ...params };
+        const input = yield* Schema.decodeUnknownEffect(Command)({ ...value, type }).pipe(
+          Effect.mapError(() => new LedgerError(400, "Invalid request")),
+        );
+        return yield* jsonResponse(yield* command(input));
+      }),
+    ),
+  ),
+  route(
+    "GET",
+    "/budgets/:budgetId/periods/:month/summary",
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(SummaryQuery)(yield* routeParams).pipe(
+        Effect.mapError(() => new LedgerError(400, "Invalid path")),
+      );
+      return yield* jsonResponse(yield* summary(input));
+    }),
+  ),
+  route(
+    "GET",
+    "/budgets/:budgetId/periods/:month",
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(SummaryQuery)(yield* routeParams).pipe(
+        Effect.mapError(() => new LedgerError(400, "Invalid path")),
+      );
+      const period = (yield* readPeriods(input.budgetId, input.month, input.month)).find(
+        (p) => p.month === input.month,
+      );
+      if (!period) return yield* Effect.fail(new LedgerError(404, "Unknown budget period"));
+      return yield* jsonResponse(period);
+    }),
+  ),
   route(
     "GET",
     "/health",
