@@ -101,7 +101,7 @@ export const startServer = Effect.fn("Http.serve")(function* (config: {
   const router = yield* toHttpEffect(routes);
   const app = Effect.gen(function* () {
     const request = yield* HttpServerRequest;
-    const target = request.originalUrl;
+    const target = request.url;
     if (!target.startsWith("/") || target.startsWith("//") || /%(?![0-9a-f]{2})/i.test(target))
       return yield* Effect.fail(new LedgerError(400, "Invalid request URL"));
     const url = yield* Effect.try({
