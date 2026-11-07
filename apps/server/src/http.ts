@@ -37,6 +37,7 @@ import {
   categories,
   payees,
   summary,
+  registerSnapshot,
 } from "./ledger.ts";
 
 export class ServerError extends Error {
@@ -44,6 +45,13 @@ export class ServerError extends Error {
 }
 
 const routes = addRoutes([
+  route(
+    "GET",
+    "/register",
+    Effect.flatMap(registerSnapshot, (value) =>
+      jsonResponse(value, { headers: { "cache-control": "no-store" } }),
+    ),
+  ),
   route(
     "GET",
     "/categories",

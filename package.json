@@ -16,7 +16,7 @@
     "lint:fix": "oxlint --type-aware --fix .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "check": "npm run format:check && npm run typecheck && npm run check:boundaries && npm run lint",
+    "check": "npm run format:check && npm run typecheck && npm run check:boundaries && npm run check:ui-colors && npm run lint",
     "server": "tsx apps/server/src/main.ts",
     "dev:server": "bash scripts/dev-server.sh",
     "check:boundaries": "node scripts/check-boundaries.mts",
@@ -27,7 +27,8 @@
     "down": "bash scripts/compose.sh down",
     "logs": "bash scripts/compose.sh logs --follow server",
     "android:build": "bash scripts/android.sh build",
-    "android:dev": "bash scripts/android.sh dev"
+    "android:dev": "bash scripts/android.sh dev",
+    "check:ui-colors": "node scripts/check-ui-colors.mts"
   },
   "dependencies": {
     "effect": "4.1.2"
