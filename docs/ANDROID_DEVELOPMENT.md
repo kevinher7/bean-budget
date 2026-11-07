@@ -1,6 +1,6 @@
 # Android development environment
 
-Research date: 7 November 2026. This guide separates preparing the host, starting a virtual device, compiling the app, and reloading JavaScript. Bean Budget now owns a pinned `nix/` development shell, direnv activation, and Android doctor/setup/emulator scripts (see the README quick start). It still has no mobile application, so the Expo commands below describe the workflow to implement when `apps/mobile` is added. No SDK downloads, emulator boot, or changes to the existing Spend Bean virtual device were performed for this research.
+Research date: 7 November 2026. This guide separates preparing the host, starting a virtual device, compiling the app, and reloading JavaScript. Bean Budget now owns a pinned `nix/` development shell, direnv activation, and Android doctor/setup/emulator scripts (see the README quick start). The first offline mobile slice is implemented in `apps/mobile`; see the implemented workflow and manual checks at the end. No SDK downloads, emulator boot, or changes to the existing Spend Bean virtual device were performed for this research.
 
 ## Recommended setup
 
@@ -82,17 +82,7 @@ adb -s emulator-5554 shell getprop sys.boot_completed
 
 Proceed when `sys.boot_completed` returns `1`; appearing in adb alone does not mean Android has finished booting. [adb device selection](https://developer.android.com/tools/adb)
 
-After `apps/mobile` is implemented, install the development client there with `npx expo install expo-dev-client`. For its first native build, run from that directory:
-
-```sh
-APP_VARIANT=dev npx expo run:android --device
-```
-
-The variant must be implemented in app configuration first; the environment variable alone does not change the Android package ID. Choose the emulator in the device picker. On subsequent sessions that only change JavaScript or TypeScript:
-
-```sh
-APP_VARIANT=dev npx expo start --dev-client --localhost
-```
+The development client is installed as a dependency of `apps/mobile`. Use the root `android:build` and `android:dev` commands described below. This slice always uses a separate development identity; it has no release variant yet.
 
 Rebuild after native dependency or config-plugin changes, not after every screen change. Keep `android/` generated and make native configuration through app config/plugins. Use a clean prebuild deliberately after native configuration changes; it replaces the generated native directory. [Expo local build and reload workflow](https://docs.expo.dev/guides/local-app-development/)
 
@@ -125,9 +115,9 @@ Available now:
 - `npm run android:setup`: explicitly creates the configured AVD if missing, without overwriting devices or downloading an image.
 - `npm run android:emulator`: starts the configured Bean Budget AVD in the foreground or reports its running device serial. It does not wait for completed boot; use the boot check above before building.
 
-`BEAN_AVD` defaults to `bean-budget`; `BEAN_ANDROID_IMAGE` defaults to the inspected API 37 Google APIs ARM64 image. The following commands remain proposals until mobile is implemented:
+`BEAN_AVD` defaults to `bean-budget`; `BEAN_ANDROID_IMAGE` defaults to the inspected API 37 Google APIs ARM64 image. The following commands are implemented (Metro only; no backend mapping):
 
-- `npm run android:build`: select a device, configure port reversal, compile/install the dev app, and start Metro.
+- `npm run android:build`: select a device, configure Metro port reversal, compile/install the dev app, and start Metro.
 - `npm run android:dev`: select a running device, restore port reversal, and start Metro for an existing dev build. If the native app is missing, explain that `android:build` is needed.
 
 Device selection must be explicit when multiple targets exist; an environment override such as `ANDROID_SERIAL` can avoid a picker. Run the backend in a separate terminal with the actual documented server command. Small wrappers around these distinct actions are easier to understand than one script that silently downloads tools, rebuilds, and changes devices.
@@ -142,4 +132,24 @@ Device selection must be explicit when multiple targets exist; an environment ov
 - **Native module missing:** rebuild the development binary; restarting Metro cannot add native libraries.
 - **Widget looks stale:** Fast Refresh does not prove the launcher widget tree was redrawn. Trigger its update path explicitly and verify its timestamp. Test background and battery behavior on a real phone before relying on it.
 
-Validated here: Java through the existing Nix shell, SDK/AVD inventory, explicit AVD discovery in avdmanager, adb binary/help, and emulator acceleration. Still to validate after mobile exists: booting its dedicated AVD, a clean native build, Metro connectivity, authenticated backend access from Android, and widget rendering. No mobile runtime is claimed to be working yet.
+Validated here: Java through the existing Nix shell, SDK/AVD inventory, explicit AVD discovery in avdmanager, adb binary/help, and emulator acceleration. Still to validate after mobile exists: booting its dedicated AVD, a clean native build, Metro connectivity, authenticated backend access from Android, and widget rendering. The initial research did not exercise a mobile runtime; implementation validation is recorded below.
+
+## Implemented offline slice
+
+The separate application now lives in `apps/mobile`. Expo 58 uses React 19.3 and React Native 0.88, verified against the [versioned official compatibility table](https://docs.expo.dev/versions/v58.0.0/); `expo install` selects the compatible native module versions. Its development-only package is `app.beanbudget.dev` (Bean Budget Dev), separate from Spend Bean. Native directories are generated and ignored.
+
+After the dedicated emulator finishes booting, run `npm run android:build`. This generates Android, compiles and installs the development binary, and starts Metro on port 8081. On later JavaScript-only sessions use `npm run android:dev`; it verifies the binary is installed and starts Metro without compiling. Both commands restore the selected device's Metro reverse mapping. Set `ANDROID_SERIAL` explicitly when multiple devices are connected. Rebuild for native dependency or app configuration changes. No backend connection or backend port reversal is needed in this slice. The development build needs Metro even when financial operations are offline; do not confuse offline data storage with an embedded production JS bundle.
+
+The screen has one local cash account starting at zero, signed whole JPY entry, a financial date initially in Asia/Tokyo, a ledger balance, transactions and a durable pending count. Shared Effect schemas validate entries and stored transactions; the shared bigint balance function enforces the same limits as the server. The native SQLite transaction inserts the financial record and serialized CreateTransaction operation with stable operation ID together. A versioned local schema uses WAL and foreign keys. This database belongs to the app sandbox and survives force-stop/relaunch and development build updates; uninstalling or clearing app data removes it. The local account ID is provisional; pending operations are not yet suitable for submission to a server account. No synchronization worker consumes or deletes them.
+
+Manual spot check (no automated tests):
+
+1. Build, open Bean Budget Dev, and confirm zero balance and an empty ledger.
+2. Keep Metro reachable over adb reverse; disable Android Wi-Fi/mobile data. Save `-550` for a valid date, then `1000`. Expect two pending operations and balance ¥450.
+3. Try `1.5`, an impossible date, and an amount/balance beyond ±1,000,000,000,000. Expect a visible error, retained input, and unchanged ledger/pending count.
+4. Force-stop `app.beanbudget.dev`, then reopen it (or rerun `android:dev` and open the dev-client project). Expect both records, ¥450, and two pending operations. A Metro reload alone is not this restart check.
+5. Inspect storage if needed with `adb -s "$ANDROID_SERIAL" shell run-as app.beanbudget.dev ls files/SQLite`. Copy SQLite plus WAL/SHM only with the app stopped, or use SQLite backup tooling. Do not reset or uninstall either project's device/app to check persistence.
+
+Widgets, web, server synchronization, authentication and real-device background behavior remain outside this slice.
+
+Implementation validation on 7 November 2026: `npm run check` passed with zero Effect warnings; `expo install --check` passed, and Android Hermes export succeeded. Generated SDK values were compile 37, target 36, build tools 37.0.0, NDK 27.1.12297006. The ARM64 debug build completed with JDK 17 through the repository Nix shell and installed on the new `bean-budget` AVD. With Wi-Fi and mobile data disabled (Metro reachable through adb reverse), manual UI entry of -550 and +1000 showed ¥450 and two pending operations after force-stop and relaunch. Entry of 1.5 showed an error and retained the input without changing balance or pending count. A stopped-app SQLite/WAL copy showed two transactions summing to 450, two unique outbox IDs with payload amounts -550/+1000, and no foreign-key violations. Invalid-date/balance-limit UI checks and real-device behavior remain to be checked. Upstream Expo/Gradle deprecation warnings remain; npm audit reports five moderate transitive Expo CLI/fingerprint/glob/minimatch advisories. No forced dependency upgrades were applied.

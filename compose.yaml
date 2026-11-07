@@ -1,0 +1,27 @@
+name: bean-budget
+
+services:
+  server:
+    build: .
+    init: true
+    environment:
+      BEAN_TOKEN: ${BEAN_TOKEN:?Use npm run up or set BEAN_TOKEN before running Docker Compose}
+    ports:
+      - "127.0.0.1:${BEAN_PORT:-3000}:3000"
+    volumes:
+      - server-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - "const r = await fetch('http://127.0.0.1:3000/health', { signal: AbortSignal.timeout(3000) }); if (!r.ok || (await r.json()).status !== 'ok') process.exit(1);"
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    stop_grace_period: 15s
+
+volumes:
+  server-data:

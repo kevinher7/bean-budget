@@ -4,3 +4,7 @@ bean-budget.sqlite*
 
 .direnv/
 .local/
+
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/

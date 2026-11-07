@@ -54,3 +54,25 @@ Input decoding failures are mapped to 400 where requests are decoded. Schema fai
 Run `npm run check` for TypeScript, shared import boundaries, typed Oxlint, and official Effect diagnostics. The project does not include automated tests or test fixtures.
 
 This slice has no categories, allocations, transfers, sync feed, Gmail, UI, pagination, account idempotency, or multi-owner auth. Queries currently read an account's full transaction history to calculate balances. Back up SQLite using its online backup facilities or stop the server and copy the database together with any WAL state; restore verification remains operational work before primary-ledger use.
+
+## Docker Compose
+
+With Docker Desktop running, `npm run up` builds the server image, starts it in the background, and waits for its health check. The wrapper creates/reuses `.local/server-token`, just like `dev:server`, unless `BEAN_TOKEN` is already exported. It never prints the token. Use `npm run logs` to follow logs and `npm run down` to stop the stack. No host Node dependencies need installing to run the container; the npm scripts only invoke Bash and Docker.
+
+The API is published at `http://127.0.0.1:3000`; `/health` is public. `BEAN_PORT=3001 npm run up` changes the published host port while the container continues listening on 3000. The native server and Compose cannot both use the same host port. The container binds all of its internal interfaces so Docker can forward requests, but the host publication is loopback-only.
+
+Compose uses a named `server-data` volume mounted at `/data`, separate from the native development database. `npm run down` preserves it. Do not use `docker compose down --volumes` unless you intend to delete the container ledger. Existing `.local/bean-budget.sqlite` data is not automatically imported. A volume is persistence, not a backup; follow the SQLite backup guidance above.
+
+For direct Compose commands, first export the token privately in your terminal:
+
+```sh
+export BEAN_TOKEN="$(cat .local/server-token)"
+docker compose up --build --detach --wait
+curl -sS http://127.0.0.1:3000/accounts -H "Authorization: Bearer $BEAN_TOKEN"
+docker compose ps
+docker compose down
+```
+
+If no token file exists yet, run `npm run up` first. Compose requires a nonempty token; there is no shared default credential. The token is supplied at runtime as an environment variable, so Docker administrators can inspect it. It is excluded from the image and build context. This is a local integration workflow, not a remote deployment configuration.
+
+The image uses Node 22, runs as its non-root `node` user, and launches the Effect server directly with the existing tsx loader. It includes the root development dependencies because tsx currently lives there. Source is copied into the image; rerun `npm run up` after edits. Prefer `npm run dev:server` for automatic reload. The build includes only the server and shared budget/protocol packages; future mobile dependencies are outside its workspace install. There is no web service yet, and the Android emulator and Metro remain host processes.

@@ -22,7 +22,12 @@
     "check:boundaries": "node scripts/check-boundaries.mts",
     "android:doctor": "bash scripts/android.sh doctor",
     "android:setup": "bash scripts/android.sh setup",
-    "android:emulator": "bash scripts/android.sh emulator"
+    "android:emulator": "bash scripts/android.sh emulator",
+    "up": "bash scripts/compose.sh up --build --detach --wait",
+    "down": "bash scripts/compose.sh down",
+    "logs": "bash scripts/compose.sh logs --follow server",
+    "android:build": "bash scripts/android.sh build",
+    "android:dev": "bash scripts/android.sh dev"
   },
   "dependencies": {
     "effect": "4.1.2"

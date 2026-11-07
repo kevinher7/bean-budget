@@ -55,14 +55,16 @@
           "unnecessaryPipeChain": "warning"
         }
       }
-    ]
+    ],
+    "jsx": "react-jsx"
   },
   "include": [
     "apps/**/*.ts",
     "apps/**/*.mts",
     "packages/**/*.ts",
     "packages/**/*.mts",
-    "scripts/**/*.mts"
+    "scripts/**/*.mts",
+    "apps/**/*.tsx"
   ],
-  "exclude": ["node_modules", "**/dist", "**/build"]
+  "exclude": ["node_modules", "**/dist", "**/build", "**/android", "**/.expo"]
 }

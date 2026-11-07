@@ -1,0 +1,14 @@
+**
+!package.json
+!package-lock.json
+!apps/
+!apps/server/
+!apps/server/**
+!packages/
+!packages/budget/
+!packages/budget/**
+!packages/protocol/
+!packages/protocol/**
+**/node_modules
+**/*.sqlite*
+**/.env*
