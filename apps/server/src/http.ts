@@ -1,0 +1,169 @@
+import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
+import { layer as nodeHttpServerLayer } from "@effect/platform-node/NodeHttpServer";
+import { ByteSize, Effect, Schema } from "effect";
+import { MaxBodySize } from "effect/http/HttpIncomingMessage";
+import { addAll as addRoutes, route, toHttpEffect } from "effect/http/HttpRouter";
+import { serveEffect } from "effect/http/HttpServer";
+import { isHttpServerError } from "effect/http/HttpServerError";
+import {
+  HttpServerRequest,
+  ParsedSearchParams,
+  schemaBodyJson,
+} from "effect/http/HttpServerRequest";
+import { json as jsonResponse } from "effect/http/HttpServerResponse";
+import { isSqlError } from "effect/sql/SqlError";
+import { CreateAccount, CreateTransaction, TransactionQuery } from "@bean-budget/protocol";
+import { LedgerError } from "./database.ts";
+import { accounts, createAccount, createTransaction, transactions } from "./ledger.ts";
+
+export class ServerError extends Error {
+  readonly _tag = "ServerError";
+}
+
+const routes = addRoutes([
+  route(
+    "GET",
+    "/health",
+    jsonResponse({ status: "ok" }, { status: 200, headers: { "cache-control": "no-store" } }),
+  ),
+  route(
+    "GET",
+    "/accounts",
+    Effect.flatMap(accounts, (value) =>
+      jsonResponse(value, { status: 200, headers: { "cache-control": "no-store" } }),
+    ),
+  ),
+  route(
+    "POST",
+    "/accounts",
+    Effect.gen(function* () {
+      const input = yield* schemaBodyJson(CreateAccount).pipe(
+        Effect.mapError((error) =>
+          Schema.isSchemaError(error) ? new LedgerError(400, "Invalid request") : error,
+        ),
+      );
+      return yield* jsonResponse(yield* createAccount(input), {
+        status: 201,
+        headers: { "cache-control": "no-store" },
+      });
+    }),
+  ),
+  route(
+    "GET",
+    "/transactions",
+    Effect.gen(function* () {
+      const params = yield* ParsedSearchParams;
+      for (const [key, value] of Object.entries(params)) {
+        if (!["accountId", "from", "to"].includes(key) || typeof value !== "string")
+          return yield* Effect.fail(new LedgerError(400, "Invalid query"));
+      }
+      const input = yield* Schema.decodeUnknownEffect(TransactionQuery)(params).pipe(
+        Effect.mapError(() => new LedgerError(400, "Invalid query")),
+      );
+      return yield* jsonResponse(yield* transactions(input), {
+        status: 200,
+        headers: { "cache-control": "no-store" },
+      });
+    }),
+  ),
+  route(
+    "POST",
+    "/transactions",
+    Effect.gen(function* () {
+      const input = yield* schemaBodyJson(CreateTransaction).pipe(
+        Effect.mapError((error) =>
+          Schema.isSchemaError(error) ? new LedgerError(400, "Invalid request") : error,
+        ),
+      );
+      return yield* jsonResponse(yield* createTransaction(input), {
+        status: 201,
+        headers: { "cache-control": "no-store" },
+      });
+    }),
+  ),
+]);
+
+function authorized(header: string | undefined, token: string): boolean {
+  const actual = Buffer.from(header ?? "");
+  const expected = Buffer.from("Bearer " + token);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export const startServer = Effect.fn("Http.serve")(function* (config: {
+  token: string;
+  host?: string;
+  port?: number;
+}) {
+  if (!config.token.trim())
+    return yield* Effect.fail(new ServerError("BEAN_TOKEN must be nonempty"));
+
+  const router = yield* toHttpEffect(routes);
+  const app = Effect.gen(function* () {
+    const request = yield* HttpServerRequest;
+    const target = request.originalUrl;
+    if (!target.startsWith("/") || target.startsWith("//") || /%(?![0-9a-f]{2})/i.test(target))
+      return yield* Effect.fail(new LedgerError(400, "Invalid request URL"));
+    const url = yield* Effect.try({
+      try: () => {
+        decodeURI(target);
+        return new URL(target, "http://localhost");
+      },
+      catch: () => new LedgerError(400, "Invalid request URL"),
+    });
+    const publicRoute = request.method === "GET" && url.pathname === "/health";
+    if (!publicRoute && !authorized(request.headers.authorization, config.token))
+      return yield* jsonResponse(
+        { error: "Unauthorized" },
+        { status: 401, headers: { "cache-control": "no-store" } },
+      );
+    return yield* router;
+  }).pipe(
+    Effect.provideService(MaxBodySize, ByteSize.kibibytes(16)),
+    Effect.catch((cause) => {
+      if (cause instanceof LedgerError)
+        return jsonResponse(
+          { error: cause.message },
+          { status: cause.status, headers: { "cache-control": "no-store" } },
+        );
+      if (isHttpServerError(cause)) {
+        if (cause.reason._tag === "RequestParseError") {
+          const oversized = cause.reason.reason === "BodyTooLarge";
+          return jsonResponse(
+            { error: oversized ? "Body too large" : "Invalid request" },
+            { status: oversized ? 413 : 400, headers: { "cache-control": "no-store" } },
+          );
+        }
+        if (cause.reason._tag === "RouteNotFound")
+          return jsonResponse(
+            { error: "Not found" },
+            { status: 404, headers: { "cache-control": "no-store" } },
+          );
+      }
+      // Only log stable classifications; errors may contain SQL values or decoded data.
+      const details = isSqlError(cause)
+        ? { errorType: "SqlError", reason: cause.reason._tag, retryable: cause.reason.isRetryable }
+        : { errorType: Schema.isSchemaError(cause) ? "StoredDataDecodeError" : "InternalError" };
+      return Effect.logError("HTTP request failed").pipe(
+        Effect.annotateLogs(details),
+        Effect.andThen(
+          jsonResponse(
+            { error: "Internal server error" },
+            { status: 500, headers: { "cache-control": "no-store" } },
+          ),
+        ),
+      );
+    }),
+  );
+
+  return yield* serveEffect(app).pipe(
+    Effect.andThen(Effect.never),
+    Effect.scoped,
+    Effect.provide(
+      nodeHttpServerLayer(createServer, {
+        host: config.host ?? "127.0.0.1",
+        port: config.port ?? 3000,
+      }),
+    ),
+  );
+});

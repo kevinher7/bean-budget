@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "ignorePatterns": [
+    "package-lock.json",
+    "node_modules/",
+    "**/dist/",
+    "**/build/",
+    "bean-budget.sqlite*"
+  ]
+}

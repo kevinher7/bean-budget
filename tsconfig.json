@@ -1,0 +1,68 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "floatingEffect": "error",
+          "missingStarInYieldEffectGen": "error",
+          "missingReturnYieldStar": "error",
+          "returnEffectInGen": "error",
+          "effectInVoidSuccess": "error",
+          "effectInFailure": "error",
+          "lazyPromiseInEffectSync": "error",
+          "unsafeEffectTypeAssertion": "error",
+          "layerMergeAllWithDependencies": "error",
+          "multipleEffectProvide": "error",
+          "runEffectInsideEffect": "error",
+          "outdatedApi": "error",
+          "duplicatePackage": "error",
+          "anyUnknownInErrorContext": "warning",
+          "tryCatchInEffectGen": "warning",
+          "globalConsoleInEffect": "warning",
+          "globalDateInEffect": "warning",
+          "globalFetchInEffect": "warning",
+          "globalRandomInEffect": "warning",
+          "globalTimersInEffect": "warning",
+          "processEnvInEffect": "warning",
+          "effectFnOpportunity": "warning",
+          "unnecessaryEffectGen": "warning",
+          "nestedEffectGenYield": "warning",
+          "effectFnIife": "warning",
+          "catchUnfailableEffect": "warning",
+          "catchAllToMapError": "warning",
+          "flatMapToMap": "warning",
+          "effectMapFlatten": "warning",
+          "effectMapVoid": "warning",
+          "effectSucceedWithVoid": "warning",
+          "unnecessaryPipe": "warning",
+          "unnecessaryPipeChain": "warning"
+        }
+      }
+    ]
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.mts",
+    "packages/**/*.ts",
+    "packages/**/*.mts",
+    "scripts/**/*.mts"
+  ],
+  "exclude": ["node_modules", "**/dist", "**/build"]
+}
