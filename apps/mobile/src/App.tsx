@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 import { Effect } from "effect";
 import {
   initialize,
@@ -15,7 +23,7 @@ import {
   acceptServer,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
-import { Action, Field, Heading, Label } from "./ui/controls.tsx";
+import { Action, Field, Heading, Label, Selection } from "./ui/controls.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 
 type Ledger = Effect.Success<ReturnType<typeof loadLedger>>;
@@ -52,7 +60,7 @@ export default function App() {
   const [payee, setPayee] = useState("");
   const [notes, setNotes] = useState("");
   const [classificationName, setClassificationName] = useState("");
-  const [classificationKind, setClassificationKind] = useState<"category" | "payee">("category");
+  const [classificationKind, setClassificationKind] = useState<"category" | "payee">();
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState<"JPY" | "USD">("JPY");
   const [opening, setOpening] = useState("0");
@@ -141,7 +149,10 @@ export default function App() {
     <View style={styles.safeScreen}>
       <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView style={styles.screen} behavior="height">
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.page, screen === "entry" && styles.entryPage]}
+        >
           <View style={styles.header}>
             <Heading>
               {screen === "register"
@@ -216,6 +227,10 @@ export default function App() {
                     disabled={busy}
                     onPress={() => {
                       setEditId(undefined);
+                      setClassificationKind(undefined);
+                      setClassificationName("");
+                      setError("");
+                      setMessage("");
                       setAmount("");
                       setNotes("");
                       setDate(today());
@@ -263,6 +278,8 @@ export default function App() {
                               disabled={busy}
                               onPress={() => {
                                 setEditId(row.id);
+                                setClassificationKind(undefined);
+                                setClassificationName("");
                                 setAmount(
                                   String(
                                     Math.abs(row.amount) / (account.currency === "USD" ? 100 : 1),
@@ -393,84 +410,100 @@ export default function App() {
                   onPress={() => setIncome(true)}
                 />
               </View>
-              <Field
-                label={`Amount · ${account.currency}`}
-                value={amount}
-                onChangeText={setAmount}
-                editable={!busy && !editId}
-                keyboardType="decimal-pad"
-                placeholder={account.currency === "USD" ? "12.34" : "550"}
-              />
-              <Field
-                label="Financial date"
-                value={date}
-                onChangeText={setDate}
-                editable={!busy && !editId}
-                placeholder="YYYY-MM-DD"
-              />
-              <Label>Bank status</Label>
-              <View style={styles.row}>
-                <Action
-                  title="Posted"
-                  secondary
-                  selected={!pending}
-                  disabled={busy || Boolean(editId)}
-                  onPress={() => setPending(false)}
-                />
-                <Action
-                  title="Pending"
-                  secondary
-                  selected={pending}
-                  disabled={busy || Boolean(editId)}
-                  onPress={() => setPending(true)}
-                />
-              </View>
-              <Label>Category</Label>
-              <View style={styles.row}>
-                <Action
-                  title="Uncategorized"
-                  secondary
-                  selected={!category}
-                  disabled={busy}
-                  onPress={() => setCategory("")}
-                />
-                {ledger?.categories.map((row) => (
-                  <Action
-                    key={row.id}
-                    title={row.name}
-                    secondary
-                    selected={category === row.id}
-                    disabled={busy}
-                    onPress={() => setCategory(row.id)}
+              <View style={styles.entryColumns}>
+                <View style={styles.entryColumn}>
+                  <Field
+                    label={`Amount · ${account.currency}`}
+                    value={amount}
+                    onChangeText={setAmount}
+                    editable={!busy && !editId}
+                    inputMode="decimal"
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    placeholder={account.currency === "USD" ? "0.00" : "0"}
                   />
-                ))}
-              </View>
-              <Label>Payee</Label>
-              <View style={styles.row}>
-                <Action
-                  title="None"
-                  secondary
-                  selected={!payee}
-                  disabled={busy}
-                  onPress={() => setPayee("")}
-                />
-                {ledger?.payees.map((row) => (
-                  <Action
-                    key={row.id}
-                    title={row.name}
-                    secondary
-                    selected={payee === row.id}
-                    disabled={busy}
-                    onPress={() => setPayee(row.id)}
+                </View>
+                <View style={styles.entryColumn}>
+                  <Field
+                    label="Date"
+                    value={date}
+                    onChangeText={setDate}
+                    editable={!busy && !editId}
+                    placeholder="YYYY-MM-DD"
                   />
-                ))}
+                </View>
               </View>
+              <View style={styles.header}>
+                <Label>{pending ? "Bank pending" : "Posted"}</Label>
+                <Switch
+                  accessibilityLabel="Bank pending"
+                  value={pending}
+                  onValueChange={setPending}
+                  disabled={busy || Boolean(editId)}
+                  trackColor={colors.switchTrack}
+                  thumbColor={colors.surface}
+                />
+              </View>
+              {(["category", "payee"] as const).map((kind) => (
+                <View key={kind} style={styles.classification}>
+                  <Selection
+                    label={kind === "category" ? "Category" : "Payee"}
+                    emptyLabel={kind === "category" ? "Uncategorized" : "None"}
+                    value={kind === "category" ? category : payee}
+                    options={(kind === "category" ? ledger?.categories : ledger?.payees) ?? []}
+                    onChange={kind === "category" ? setCategory : setPayee}
+                    disabled={busy}
+                    onAdd={() => {
+                      setClassificationKind(classificationKind === kind ? undefined : kind);
+                      setClassificationName("");
+                    }}
+                  />
+                  {classificationKind === kind && (
+                    <>
+                      <Field
+                        label={kind === "category" ? "New category" : "New payee"}
+                        value={classificationName}
+                        onChangeText={setClassificationName}
+                        editable={!busy}
+                        autoFocus
+                      />
+                      <View style={styles.row}>
+                        <Action
+                          title="Add"
+                          disabled={busy || !classificationName.trim()}
+                          onPress={() =>
+                            run(saveClassification(kind, classificationName.trim()), (value) => {
+                              setLedger(value);
+                              const previous =
+                                kind === "category" ? ledger?.categories : ledger?.payees;
+                              const created = (
+                                kind === "category" ? value.categories : value.payees
+                              ).find((row) => !previous?.some((saved) => saved.id === row.id));
+                              if (created)
+                                (kind === "category" ? setCategory : setPayee)(created.id);
+                              setClassificationName("");
+                              setClassificationKind(undefined);
+                            })
+                          }
+                        />
+                        <Action
+                          title="Cancel"
+                          secondary
+                          disabled={busy}
+                          onPress={() => setClassificationKind(undefined)}
+                        />
+                      </View>
+                    </>
+                  )}
+                </View>
+              ))}
               <Field
-                label="Notes · optional"
+                label="Notes"
+                hideLabel
+                placeholder="Notes · optional"
                 value={notes}
                 onChangeText={setNotes}
                 editable={!busy}
-                multiline
               />
               <Action
                 title="Save transaction"
@@ -515,42 +548,6 @@ export default function App() {
                   );
                 }}
               />
-              <View style={styles.section}>
-                <Heading>New category or payee</Heading>
-                <View style={styles.row}>
-                  <Action
-                    title="Category"
-                    secondary
-                    selected={classificationKind === "category"}
-                    disabled={busy}
-                    onPress={() => setClassificationKind("category")}
-                  />
-                  <Action
-                    title="Payee"
-                    secondary
-                    selected={classificationKind === "payee"}
-                    disabled={busy}
-                    onPress={() => setClassificationKind("payee")}
-                  />
-                </View>
-                <Field
-                  label="Name"
-                  value={classificationName}
-                  onChangeText={setClassificationName}
-                  editable={!busy}
-                />
-                <Action
-                  title={`Create ${classificationKind}`}
-                  secondary
-                  disabled={busy || !classificationName.trim()}
-                  onPress={() =>
-                    run(saveClassification(classificationKind, classificationName), (value) => {
-                      setLedger(value);
-                      setClassificationName("");
-                    })
-                  }
-                />
-              </View>
             </>
           )}
           {screen === "connection" && (
@@ -605,7 +602,11 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   screen: { flex: 1, backgroundColor: colors.surface },
-  page: { padding: spacing.large, paddingTop: 32, paddingBottom: 48, gap: spacing.medium },
+  page: { padding: spacing.medium, paddingTop: 12, paddingBottom: 24, gap: spacing.small },
+  entryPage: { padding: spacing.medium, paddingTop: 8, paddingBottom: 16, gap: 8 },
+  entryColumns: { flexDirection: "row", gap: spacing.small },
+  entryColumn: { flex: 1 },
+  classification: { gap: 4 },
   header: {
     flexDirection: "row",
     alignItems: "center",
