@@ -9,9 +9,9 @@ Backups contain financial data in plaintext. Store them in a private, encrypted 
 Use the repository's Node 22 environment. The following commands do not read `BEAN_TOKEN` or `.local/server-token`.
 
 ```sh
-npx tsx tools/server-backup.mts export /path/to/server.sqlite /private/backups/bean-001
-npx tsx tools/server-backup.mts verify /private/backups/bean-001
-npx tsx tools/server-backup.mts restore /private/backups/bean-001 /path/to/recovered.sqlite
+npm run server:backup -- export /path/to/server.sqlite /private/backups/bean-001
+npm run server:backup -- verify /private/backups/bean-001
+npm run server:backup -- restore /private/backups/bean-001 /path/to/recovered.sqlite
 ```
 
 Export uses [Node's SQLite backup API](https://nodejs.org/download/release/latest-jod/docs/api/sqlite.html#sqlitebackupsourceDb-destination-options), which captures a consistent database while the server runs, including committed WAL content. Copying only a live `.sqlite` file can lose committed data. See [SQLite's online backup documentation](https://www.sqlite.org/backup.html).

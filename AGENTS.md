@@ -19,6 +19,8 @@ Inline trivial forwarding wrappers rather than creating abstractions just to sho
 
 ## Checks
 
+Keep `tools/` for lint and repository checks. Put operational commands with their owning app.
+
 - Use `npm run format` for Oxfmt formatting. Separate top-level function, class, and schema declarations with a blank line; Oxfmt preserves these lines but does not insert them automatically.
 - Run `npm run check` before declaring a code or configuration change complete. It runs Oxfmt, TypeScript, import boundary checks, typed Oxlint, and the official Effect diagnostic CLI; warnings fail the check.
 - Do not add tests or test fixtures unless the user explicitly requests them. This project uses typechecking, import boundary checks, and linting.

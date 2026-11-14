@@ -45,7 +45,7 @@ jobs:
           export BEAN_ANDROID_KEYSTORE="$RUNNER_TEMP/bean-budget-release.jks"
           trap 'rm -f "$BEAN_ANDROID_KEYSTORE"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$BEAN_ANDROID_KEYSTORE"
-          bash tools/android-release.sh
+          bash apps/mobile/android-release.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bean-budget-android-${{ github.sha }}

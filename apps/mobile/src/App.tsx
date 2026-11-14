@@ -28,7 +28,7 @@ import {
   getServerUrl,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
-import { pickBackupFile, saveBackupFile } from "./backup-files.ts";
+import { pickBackupFile, saveBackupFile } from "./backup.ts";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 

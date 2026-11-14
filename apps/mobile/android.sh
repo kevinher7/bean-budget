@@ -26,7 +26,7 @@ case "${1:-}" in
     fi
     adb -s "$ANDROID_SERIAL" get-state
     adb -s "$ANDROID_SERIAL" reverse tcp:8081 tcp:8081
-    cd "$(dirname "$0")/../apps/mobile"
+    cd "$(dirname "$0")"
     if [[ "$action" == build ]]; then
       npx expo prebuild --platform android --clean --no-install
       exec npx expo run:android --device "$ANDROID_SERIAL" --port 8081
@@ -81,5 +81,5 @@ case "${1:-}" in
     done < <(adb devices)
     exec emulator -avd "$avd"
     ;;
-  *) echo "Usage: bash tools/android.sh {doctor|setup|emulator|build|dev}" >&2; exit 1 ;;
+  *) echo "Usage: bash apps/mobile/android.sh {doctor|setup|emulator|build|dev}" >&2; exit 1 ;;
 esac

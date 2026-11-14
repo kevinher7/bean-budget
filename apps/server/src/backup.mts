@@ -25,10 +25,10 @@ import {
   Transaction,
   Month,
 } from "@bean-budget/protocol";
-import { databaseLayer } from "../apps/server/src/database.ts";
-import { registerSnapshot } from "../apps/server/src/ledger.ts";
-import { readBudgets, readPeriods } from "../apps/server/src/budgets.ts";
-import { readOccurrences, readSchedules } from "../apps/server/src/schedules.ts";
+import { databaseLayer } from "./database.ts";
+import { registerSnapshot } from "./ledger.ts";
+import { readBudgets, readPeriods } from "./budgets.ts";
+import { readOccurrences, readSchedules } from "./schedules.ts";
 
 class BackupError extends Data.TaggedError("BackupError")<{ message: string }> {}
 
@@ -235,7 +235,7 @@ async function main() {
   )
     throw new BackupError({
       message:
-        "Usage: tsx tools/server-backup.mts export DATABASE BACKUP_DIRECTORY | verify BACKUP_DIRECTORY | restore BACKUP_DIRECTORY NEW_DATABASE",
+        "Usage: npm run server:backup -- export DATABASE BACKUP_DIRECTORY | verify BACKUP_DIRECTORY | restore BACKUP_DIRECTORY NEW_DATABASE",
     });
   const scratch = await mkdtemp(join(tmpdir(), "bean-server-backup-"));
   try {

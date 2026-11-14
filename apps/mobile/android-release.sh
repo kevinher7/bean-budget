@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 
 require() {
   command -v "$1" >/dev/null || { echo "Missing $1. Enter the repository Nix environment." >&2; exit 1; }

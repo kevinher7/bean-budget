@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 # A stable development credential survives server restarts; never print it.
 umask 077
