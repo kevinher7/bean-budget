@@ -15,3 +15,17 @@ Connection credentials belong in platform secure storage. The connection screen 
 The signed Android release bundles JavaScript and starts without Metro. Development builds still use Metro. See [Android release and updates](ANDROID_RELEASE.md) for identity, signing, installation and Obtainium. Database persistence survives force-stop and updates, but uninstalling or clearing app data removes unsynchronized entries.
 
 The Backup screen exports the complete local register, accepted snapshots, ordered outbox operations and original server URL as versioned JSON. Tokens stay in SecureStore. Export writes to a folder selected through Android and verifies the saved bytes. Restore validates the content, shows counts, requires a saved recovery copy and explicit replacement confirmation, then replaces the register in one transaction with verified readback. It rejects a changed register or a different saved server. See [backup and restore](BACKUP.md) for server backups and recovery limits.
+
+## Android widgets
+
+Add Bean Budget widgets from the Android launcher's widget picker. Quick add opens a new expense entry, or account creation when the register is empty. Register summary opens the register and resizes between compact and wide layouts. Both use the same bean color tokens as the app. The register and entry screens keep their existing layout.
+
+The summary shows posted and projected balances separately for each currency across local accounts. It never combines JPY and USD or presents a ledger balance as a spending allowance. Bank-pending entries affect projected balances. Waiting and failed operation counts describe synchronization separately.
+
+Native Android providers read the existing SQLite database in read-only mode, including committed WAL content, without starting React Native or contacting a server. One SQL statement reads balances, outbox counts and freshness metadata consistently. Missing, unsupported or unreadable storage displays a setup or unavailable message instead of zero balances. Rendering never creates or migrates the database.
+
+Local records and outbox changes update a committed timestamp through SQLite triggers. Successful synchronization records its own timestamp. Restoring a backup clears the previous sync timestamp and marks the restored register updated now. These timestamps are operational metadata, not financial dates, and are not part of backup format 1. Existing backups remain compatible.
+
+Register reads request a widget refresh after initialization, local mutations, conflict recovery, sync and restore. If Android cannot refresh, the app retains the saved register and displays a widget warning. Android also refreshes widgets on provider updates and resizing. Periodic refresh is best effort under Android power restrictions. A widget timestamp describes committed local data, not a promise of background synchronization.
+
+See [Android widgets](WIDGETS.md) for implementation ownership and emulator verification.

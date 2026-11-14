@@ -1,0 +1,9 @@
+<resources>
+  <string name="bean_widget_register_name">Bean balances</string>
+  <string name="bean_widget_add_name">Add transaction</string>
+  <string name="bean_widget_register_description">Posted and projected local balances, separated by currency.</string>
+  <string name="bean_widget_add_description">Open Bean Budget to add a transaction.</string>
+  <string name="bean_widget_scope">ALL ACCOUNTS</string>
+  <string name="bean_widget_add">Add entry</string>
+  <string name="bean_widget_plus">+</string>
+</resources>

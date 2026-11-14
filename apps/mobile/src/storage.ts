@@ -12,6 +12,7 @@ import {
   RegisterSnapshot,
 } from "@bean-budget/protocol";
 import { openDatabaseSync, type SQLiteDatabase } from "expo-sqlite";
+import { refreshWidgets } from "./widgets.ts";
 import { randomUUID } from "expo-crypto";
 import { loadConnection } from "./connection.ts";
 import {
@@ -90,7 +91,7 @@ const initializeDatabase = Effect.try({
       const version = database.getFirstSync<{ user_version: number }>(
         "PRAGMA user_version",
       )?.user_version;
-      if (version === 3) return;
+      if (version === 3 || version === 4) return;
       if (version === 2) {
         database.execSync(
           "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
@@ -148,6 +149,14 @@ const initializeDatabase = Effect.try({
       database.execSync(
         "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
       );
+    });
+    database.withTransactionSync(() => {
+      for (const table of ["records", "outbox"])
+        for (const action of ["INSERT", "UPDATE", "DELETE"])
+          database.execSync(
+            `CREATE TRIGGER IF NOT EXISTS widget_${table}_${action.toLowerCase()} AFTER ${action} ON ${table} BEGIN INSERT INTO metadata(name,value) VALUES('widgetUpdatedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value; END;`,
+          );
+      database.execSync("PRAGMA user_version=4;");
     });
   },
   catch: (cause) => new LocalStorageError({ message: "Could not open local ledger", cause }),
@@ -286,6 +295,9 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
             "INSERT INTO metadata(name,value) VALUES('serverUrl',?)",
             backup.serverUrl,
           );
+        database.runSync(
+          "INSERT INTO metadata(name,value) VALUES('widgetUpdatedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+        );
         if (backupContent(readBackup()) !== backupContent(backup))
           throw new Error("Restored content differs from backup. Restore rolled back.");
       });
@@ -301,7 +313,7 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
 });
 
 export const loadLedger = Effect.fn("loadLedger")(function* () {
-  return yield* Effect.try({
+  const ledger = yield* Effect.try({
     try: () => {
       const queued = operations();
       const transactions = records("transactions", Transaction)
@@ -344,6 +356,14 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
     },
     catch: (cause) => new LocalStorageError({ message: "Could not read local ledger", cause }),
   });
+  const widgets = yield* refreshWidgets.pipe(Effect.result);
+  return {
+    ...ledger,
+    widgetWarning:
+      widgets._tag === "Failure"
+        ? "Your register is saved. Widgets could not refresh. Reopen the app to retry."
+        : null,
+  };
 });
 
 export const createAccount = Effect.fn("createAccount")(function* (input: {
@@ -692,7 +712,14 @@ export const synchronize = Effect.fn("synchronize")(function* (connection: {
     const snapshot = yield* request(connection, "GET", "/register").pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
     );
-    yield* Effect.try(() => database.withTransactionSync(() => mergeSnapshot(snapshot)));
+    yield* Effect.try(() =>
+      database.withTransactionSync(() => {
+        mergeSnapshot(snapshot);
+        database.runSync(
+          "INSERT INTO metadata(name,value) VALUES('lastSyncedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+        );
+      }),
+    );
     return yield* loadLedger();
   }).pipe(
     Effect.ensuring(

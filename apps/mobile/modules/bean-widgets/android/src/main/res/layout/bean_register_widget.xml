@@ -1,0 +1,116 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/bean_widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/bean_widget_surface"
+  android:orientation="vertical"
+  android:padding="12dp">
+  <TextView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:includeFontPadding="false"
+    android:text="@string/bean_widget_scope"
+    android:letterSpacing="0.12"
+    android:textColor="@color/bean_widget_secondary"
+    android:textSize="10sp"
+    android:textStyle="bold" />
+  <TextView
+    android:id="@+id/bean_widget_empty"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:gravity="center_vertical"
+    android:text="Open Bean Budget to add an account"
+    android:textColor="@color/bean_widget_text"
+    android:textSize="14sp" />
+  <LinearLayout
+    android:id="@+id/bean_widget_balances"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:visibility="gone">
+    <LinearLayout
+      android:id="@+id/bean_widget_jpy"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1"
+      android:gravity="center_vertical"
+      android:orientation="vertical">
+      <TextView
+        android:id="@+id/bean_widget_jpy_posted"
+        android:layout_width="match_parent"
+        android:layout_height="25dp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="10sp"
+        android:autoSizeMaxTextSize="22sp"
+        android:autoSizeStepGranularity="1sp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/bean_widget_text"
+        android:textStyle="bold" />
+      <TextView
+        android:id="@+id/bean_widget_jpy_projected"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="10sp"
+        android:autoSizeStepGranularity="1sp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/bean_widget_secondary"
+        android:textSize="10sp" />
+    </LinearLayout>
+    <LinearLayout
+      android:id="@+id/bean_widget_usd"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1"
+      android:gravity="center_vertical"
+      android:orientation="vertical">
+      <TextView
+        android:id="@+id/bean_widget_usd_posted"
+        android:layout_width="match_parent"
+        android:layout_height="25dp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="10sp"
+        android:autoSizeMaxTextSize="22sp"
+        android:autoSizeStepGranularity="1sp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/bean_widget_text"
+        android:textStyle="bold" />
+      <TextView
+        android:id="@+id/bean_widget_usd_projected"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="10sp"
+        android:autoSizeStepGranularity="1sp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/bean_widget_secondary"
+        android:textSize="10sp" />
+    </LinearLayout>
+  </LinearLayout>
+  <TextView
+    android:id="@+id/bean_widget_sync"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:includeFontPadding="false"
+    android:maxLines="2"
+    android:textColor="@color/bean_widget_secondary"
+    android:textSize="10sp" />
+  <TextView
+    android:id="@+id/bean_widget_freshness"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="2dp"
+    android:includeFontPadding="false"
+    android:maxLines="2"
+    android:textColor="@color/bean_widget_secondary"
+    android:textSize="9sp" />
+</LinearLayout>

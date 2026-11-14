@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <receiver android:name=".RegisterWidgetProvider" android:exported="false" android:label="@string/bean_widget_register_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/bean_register_widget" />
+    </receiver>
+    <receiver android:name=".AddWidgetProvider" android:exported="false" android:label="@string/bean_widget_add_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/bean_add_widget" />
+    </receiver>
+  </application>
+</manifest>
