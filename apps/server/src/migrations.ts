@@ -3,8 +3,15 @@ import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import initial, { definitions } from "../migrations/001_initial_ledger.ts";
 
+import tracking from "../migrations/002_tracking.ts";
+import relationalBudget from "../migrations/003_relational_budget.ts";
+
 // Append immutable migration modules here. This list defines supported journal entries.
-const registry = [{ id: 1, name: "initial_ledger", effect: initial }];
+const registry = [
+  { id: 1, name: "initial_ledger", effect: initial },
+  { id: 2, name: "tracking", effect: tracking },
+  { id: 3, name: "relational_budget", effect: relationalBudget },
+];
 
 const incompatible = () =>
   new MigrationError({
