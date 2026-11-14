@@ -12,6 +12,7 @@ import {
   Transaction,
   Transactions,
   TransactionQuery,
+  RegisterSnapshot,
 } from "@bean-budget/protocol";
 import { LedgerError } from "./database.ts";
 import { readBudgets, readPeriods } from "./budgets.ts";
@@ -70,17 +71,40 @@ export const createAccount = Effect.fn("Ledger.createAccount")(function* (
   const random = yield* SecureRandom;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
-      const id = yield* random.uuidV4();
+      if (input.id && !input.operationId)
+        return yield* Effect.fail(new LedgerError(400, "Account ID requires an operation ID"));
+      const payload = JSON.stringify({ type: "createAccount", ...input });
+      if (input.operationId) {
+        const receipts = yield* Schema.decodeUnknownEffect(ReceiptRows)(
+          yield* sql`SELECT payload,result FROM receipts WHERE operationId=${input.operationId}`,
+        );
+        const saved = receipts[0];
+        if (saved) {
+          if (saved.payload !== payload)
+            return yield* Effect.fail(
+              new LedgerError(409, "Operation ID already used with different payload"),
+            );
+          return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Account))(saved.result);
+        }
+      }
+      const id = input.id ?? (yield* random.uuidV4());
+      if ((yield* sql`SELECT id FROM accounts WHERE id=${id}`).length)
+        return yield* Effect.fail(new LedgerError(409, "Account ID already exists"));
       const openingId = yield* random.uuidV4();
       yield* sql`INSERT INTO accounts (id, name, currency) VALUES (${id}, ${input.name}, ${input.currency ?? "JPY"})`;
       yield* sql`INSERT INTO transactions (id, accountId, amount, date, kind) VALUES (${openingId}, ${id}, ${input.openingBalance}, ${input.date}, 'opening')`;
-      return yield* Schema.decodeUnknownEffect(Account)({
+      const result = yield* Schema.decodeUnknownEffect(Account)({
         id,
         name: input.name,
         currency: input.currency ?? "JPY",
         balance: input.openingBalance,
         projectedBalance: input.openingBalance,
       });
+      if (input.operationId) {
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Account))(result);
+        yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},${encoded})`;
+      }
+      return result;
     }),
   );
 });
@@ -220,11 +244,20 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
       if (receipt) {
         const original = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Command))(
           receipt.payload,
+        ).pipe(
+          Effect.mapError(
+            () => new LedgerError(409, "Operation ID already used with different payload"),
+          ),
         );
         if (commandPayload(original) !== payload)
           return yield* Effect.fail(
             new LedgerError(409, "Operation ID already used with different payload"),
           );
+        if (input.type === "editTransaction" && receipt.result !== "{}")
+          return {
+            accepted: true,
+            transaction: yield* Schema.decodeUnknownEffect(TransactionJson)(receipt.result),
+          };
         return { accepted: true };
       }
       switch (input.type) {
@@ -410,6 +443,16 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
         }
       }
       yield* validateBalances;
+      if (input.type === "editTransaction") {
+        const rows = yield* Schema.decodeUnknownEffect(Transactions)(
+          yield* sql`SELECT * FROM transactions WHERE id=${input.id}`,
+        );
+        const transaction = rows[0];
+        if (!transaction) return yield* Effect.fail(new LedgerError(404, "Unknown transaction"));
+        const encoded = yield* Schema.encodeEffect(TransactionJson)(transaction);
+        yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},${encoded})`;
+        return { accepted: true, transaction };
+      }
       yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},'{}')`;
       return { accepted: true };
     }),
@@ -432,6 +475,22 @@ export const summary = Effect.fn("Ledger.summary")(function* (input: typeof Summ
           return summarizePeriods(budget, input.month, history, { occurrences, plans });
         },
         catch: () => new LedgerError(400, "Summary exceeds supported amounts or date range"),
+      });
+    }),
+  );
+});
+
+export const registerSnapshot = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      return yield* Schema.decodeUnknownEffect(RegisterSnapshot)({
+        accounts: yield* accounts,
+        categories: yield* categories,
+        payees: yield* payees,
+        transactions: yield* Schema.decodeUnknownEffect(Transactions)(
+          yield* sql`SELECT * FROM transactions ORDER BY date,rowid`,
+        ),
       });
     }),
   );

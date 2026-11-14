@@ -2,6 +2,8 @@ import { Schema } from "effect";
 import { Currency, FinancialDate, Id, Money, Name } from "@bean-budget/budget";
 
 export const CreateAccount = Schema.Struct({
+  operationId: Schema.optional(Id),
+  id: Schema.optional(Id),
   name: Name,
   currency: Schema.optional(Currency),
   openingBalance: Money,
@@ -137,3 +139,10 @@ export const Command = Schema.Union([
 ]);
 
 export const SummaryQuery = Schema.Struct({ budgetId: Id, month: Month });
+
+export const RegisterSnapshot = Schema.Struct({
+  accounts: Schema.Array(Account),
+  categories: Schema.Array(NamedRecord),
+  payees: Schema.Array(NamedRecord),
+  transactions: Transactions,
+});

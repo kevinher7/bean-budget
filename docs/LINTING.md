@@ -48,3 +48,7 @@ The research reports describe available options. The checked-in configuration an
 The budget, protocol, and server source exports share the root NodeNext TypeScript project; both TypeScript and Effect diagnostics check their actual source. `npm run check` also runs `check:boundaries` before lint. The boundary checker resolves static imports and exports with TypeScript: budget may depend only on itself and Effect, protocol additionally on budget. Dynamic imports and require are forbidden in shared packages. Runtime platform dependencies stay in the server workspace. No lint safety exceptions were added.
 
 The server uses pinned `@effect/sql-sqlite-node` 4.1.2 with Effect 4.1.2 and Node’s built-in SQLite driver. Direct better-sqlite3 and its type dependency have been removed. SQL, migrations, SecureRandom IDs, and receipt codecs are checked by the same TypeScript and Effect diagnostics pipeline. Static checks do not exercise migration adoption or transaction behavior.
+
+## Mobile colors
+
+`check:ui-colors` parses mobile TypeScript and TSX with the TypeScript AST. Color style properties and JSX color props must use `colors` imported from `apps/mobile/src/ui/theme.ts`, including aliased imports. It checks computed string property names and rejects shorthand color properties. Literal hex, RGB and HSL colors outside that token module are rejected too. Conditional color choices must use tokens in both branches. Keep palette literals in the token module; add a semantic role there when the interface needs another color.

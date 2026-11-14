@@ -4,7 +4,9 @@
     "slug": "bean-budget",
     "scheme": "bean-budget-dev",
     "version": "0.0.0",
-    "android": { "package": "app.beanbudget.dev" },
-    "plugins": ["expo-dev-client", "expo-sqlite"]
+    "android": {
+      "package": "app.beanbudget.dev"
+    },
+    "plugins": ["expo-dev-client", "expo-sqlite", "expo-secure-store"]
   }
 }
