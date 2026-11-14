@@ -79,5 +79,5 @@ case "${1:-}" in
     done < <(adb devices)
     exec emulator -avd "$avd"
     ;;
-  *) echo "Usage: bash scripts/android.sh {doctor|setup|emulator|build|dev}" >&2; exit 1 ;;
+  *) echo "Usage: bash tools/android.sh {doctor|setup|emulator|build|dev}" >&2; exit 1 ;;
 esac

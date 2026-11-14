@@ -63,7 +63,7 @@
     "apps/**/*.mts",
     "packages/**/*.ts",
     "packages/**/*.mts",
-    "scripts/**/*.mts",
+    "tools/**/*.mts",
     "apps/**/*.tsx"
   ],
   "exclude": ["node_modules", "**/dist", "**/build", "**/android", "**/.expo"]
