@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -23,7 +24,7 @@ import {
   acceptServer,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
-import { Action, Field, Heading, Label, Selection } from "./ui/controls.tsx";
+import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 
 type Ledger = Effect.Success<ReturnType<typeof loadLedger>>;
@@ -68,6 +69,10 @@ export default function App() {
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Effect.Success<typeof loadConnection>>(null);
   const account = ledger?.accounts.find((row) => row.id === selected) ?? ledger?.accounts[0];
+
+  const transactions = (
+    ledger?.transactions.filter((row) => row.accountId === account?.id) ?? []
+  ).sort((left, right) => right.date.localeCompare(left.date));
 
   useEffect(() => {
     let active = true;
@@ -187,25 +192,26 @@ export default function App() {
           {screen === "register" && (
             <>
               <View style={styles.row}>
-                <Action
+                <TextAction
                   title="New account"
-                  secondary
                   disabled={busy || !ledger}
                   onPress={() => setScreen("account")}
                 />
-                <Action
+                <TextAction
                   title="Connection"
-                  secondary
                   disabled={busy}
                   onPress={() => setScreen("connection")}
                 />
               </View>
-              <ScrollView horizontal contentContainerStyle={styles.row}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.accountTabs}
+              >
                 {ledger?.accounts.map((row) => (
-                  <Action
+                  <TextAction
                     key={row.id}
                     title={`${row.name} · ${row.currency}`}
-                    secondary
                     selected={account?.id === row.id}
                     disabled={busy}
                     onPress={() => setSelected(row.id)}
@@ -215,12 +221,11 @@ export default function App() {
               {account ? (
                 <>
                   <View style={styles.balances}>
-                    <Label muted>
-                      {account.name} · {account.currency}
-                    </Label>
                     <Text style={styles.balance}>{money(account.balance, account.currency)}</Text>
-                    <Label>Posted balance</Label>
-                    <Label>Projected {money(account.projectedBalance, account.currency)}</Label>
+                    <Label muted>Posted · {account.currency}</Label>
+                    <Label muted>
+                      Projected {money(account.projectedBalance, account.currency)}
+                    </Label>
                   </View>
                   <Action
                     title="Add transaction"
@@ -239,104 +244,122 @@ export default function App() {
                   />
                   <View style={styles.section}>
                     <Heading>Transactions</Heading>
-                    {ledger?.transactions.filter((row) => row.accountId === account.id).length ===
-                      0 && <Label muted>No transactions yet. Add an expense or income.</Label>}
-                    {ledger?.transactions
-                      .filter((row) => row.accountId === account.id)
-                      .map((row) => (
-                        <View key={row.id} style={styles.transaction}>
-                          <View style={styles.header}>
-                            <View style={styles.transactionText}>
-                              <Label>
-                                {row.kind === "opening"
-                                  ? "Opening balance"
-                                  : (ledger.payees.find((value) => value.id === row.payeeId)
-                                      ?.name ?? (row.amount < 0 ? "Expense" : "Income"))}
-                              </Label>
-                              <Label muted>
-                                {row.date} ·{" "}
-                                {ledger.categories.find((value) => value.id === row.categoryId)
-                                  ?.name ?? "Uncategorized"}
-                              </Label>
+                    {transactions.length === 0 && (
+                      <Label muted>No transactions yet. Add an expense or income.</Label>
+                    )}
+                    {transactions.map((row, index) => (
+                      <View key={row.id}>
+                        {(index === 0 || transactions[index - 1]?.date !== row.date) && (
+                          <Text accessibilityRole="header" style={styles.day}>
+                            {row.date}
+                          </Text>
+                        )}
+                        <View style={styles.transaction}>
+                          <Pressable
+                            accessibilityRole={
+                              row.kind === "transaction" && !row.transferId ? "button" : undefined
+                            }
+                            accessibilityLabel={
+                              row.kind === "transaction" && !row.transferId
+                                ? `Edit ${row.amount < 0 ? "expense" : "income"}, ${money(row.amount, account.currency)}, ${row.date}`
+                                : undefined
+                            }
+                            accessibilityState={{
+                              disabled:
+                                busy || row.kind !== "transaction" || Boolean(row.transferId),
+                            }}
+                            disabled={busy || row.kind !== "transaction" || Boolean(row.transferId)}
+                            style={({ pressed }) => [
+                              styles.transactionBody,
+                              pressed && styles.pressed,
+                            ]}
+                            onPress={() => {
+                              setEditId(row.id);
+                              setClassificationKind(undefined);
+                              setClassificationName("");
+                              setError("");
+                              setMessage("");
+                              setAmount(
+                                String(
+                                  Math.abs(row.amount) / (account.currency === "USD" ? 100 : 1),
+                                ),
+                              );
+                              setDate(row.date);
+                              setIncome(row.amount > 0);
+                              setPending(row.status === "pending");
+                              setCategory(row.categoryId ?? "");
+                              setPayee(row.payeeId ?? "");
+                              setNotes(row.notes ?? "");
+                              setScreen("entry");
+                            }}
+                          >
+                            <View style={styles.header}>
+                              <View style={styles.transactionText}>
+                                <Label>
+                                  {row.kind === "opening"
+                                    ? "Opening balance"
+                                    : (ledger?.payees.find((value) => value.id === row.payeeId)
+                                        ?.name ?? (row.amount < 0 ? "Expense" : "Income"))}
+                                </Label>
+                                <Label muted>
+                                  {ledger?.categories.find((value) => value.id === row.categoryId)
+                                    ?.name ?? "Uncategorized"}
+                                </Label>
+                              </View>
+                              <Text style={styles.amount}>
+                                {money(row.amount, account.currency)}
+                              </Text>
                             </View>
-                            <Text style={styles.amount}>{money(row.amount, account.currency)}</Text>
-                          </View>
-                          {row.notes && <Label muted>{row.notes}</Label>}
-                          <Label muted>
-                            {row.status === "pending" ? "Bank pending" : "Posted"} ·{" "}
-                            {row.syncStatus === "synced"
-                              ? "Synced"
-                              : row.syncStatus === "failed"
-                                ? "Sync failed"
-                                : "Waiting to sync"}
-                          </Label>
-                          {row.syncError && <Text style={styles.error}>{row.syncError}</Text>}
-                          {row.kind === "transaction" && !row.transferId && (
-                            <Action
-                              title="Edit details"
-                              secondary
-                              disabled={busy}
-                              onPress={() => {
-                                setEditId(row.id);
-                                setClassificationKind(undefined);
-                                setClassificationName("");
-                                setAmount(
-                                  String(
-                                    Math.abs(row.amount) / (account.currency === "USD" ? 100 : 1),
-                                  ),
-                                );
-                                setDate(row.date);
-                                setIncome(row.amount > 0);
-                                setPending(row.status === "pending");
-                                setCategory(row.categoryId ?? "");
-                                setPayee(row.payeeId ?? "");
-                                setNotes(row.notes ?? "");
-                                setScreen("entry");
-                              }}
-                            />
-                          )}
+                            {row.notes && <Label muted>{row.notes}</Label>}
+                            <Label muted>
+                              {row.status === "pending" ? "Bank pending" : "Posted"} ·{" "}
+                              {row.syncStatus === "synced"
+                                ? "Synced"
+                                : row.syncStatus === "failed"
+                                  ? "Sync failed"
+                                  : "Waiting to sync"}
+                            </Label>
+                            {row.syncError && <Text style={styles.error}>{row.syncError}</Text>}
+                          </Pressable>
                           {row.kind === "transaction" &&
                             !row.transferId &&
                             row.status === "pending" && (
-                              <Action
+                              <TextAction
                                 title="Post transaction"
-                                secondary
                                 disabled={busy}
                                 onPress={() => run(postTransaction(row.id), setLedger)}
                               />
                             )}
                           {row.syncStatus === "failed" && (
                             <View style={styles.row}>
-                              <Action
+                              <TextAction
                                 title="Keep local edit"
-                                secondary
                                 disabled={busy}
                                 onPress={() => run(resolveConflict(row.id), setLedger)}
                               />
-                              <Action
+                              <TextAction
                                 title="Use server"
-                                secondary
                                 disabled={busy}
                                 onPress={() => run(acceptServer(row.id), setLedger)}
                               />
                             </View>
                           )}
                         </View>
-                      ))}
+                      </View>
+                    ))}
                   </View>
                 </>
               ) : (
                 <Label>No accounts yet. Create an account to start your register.</Label>
               )}
-              <View style={styles.section}>
+              <View style={styles.sync}>
                 <Label muted>
                   {ledger?.pending ?? 0} waiting to sync · {ledger?.failed ?? 0} failed
                 </Label>
-                <Action title="Sync now" disabled={busy || !ledger} onPress={sync} />
+                <TextAction title="Sync now" disabled={busy || !ledger} onPress={sync} />
                 {(ledger?.failed ?? 0) > 0 && (
-                  <Action
+                  <TextAction
                     title="Retry failed operations"
-                    secondary
                     disabled={busy}
                     onPress={() => run(retryFailed(), setLedger)}
                   />
@@ -613,21 +636,34 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.small,
   },
+  accountTabs: { flexDirection: "row", gap: spacing.medium },
   row: { flexDirection: "row", flexWrap: "wrap", gap: spacing.small },
   section: {
-    gap: spacing.medium,
-    borderTopWidth: 1,
-    borderColor: colors.outline,
-    paddingTop: spacing.large,
+    gap: spacing.small,
+    paddingTop: spacing.medium,
   },
-  balances: { gap: 4, paddingVertical: spacing.medium },
+  balances: { gap: 2, paddingVertical: spacing.small },
+  sync: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: spacing.small,
+  },
+  day: {
+    color: colors.secondary,
+    fontSize: 14,
+    fontWeight: "600",
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  transactionBody: { minHeight: 48, gap: 2, paddingVertical: 10 },
+  pressed: { backgroundColor: colors.selected },
   balance: { color: colors.text, fontSize: 36, fontWeight: "600", fontVariant: ["tabular-nums"] },
   amount: { color: colors.text, fontSize: 17, fontWeight: "600", fontVariant: ["tabular-nums"] },
   transaction: {
-    gap: spacing.small,
     borderBottomWidth: 1,
     borderColor: colors.outline,
-    paddingBottom: spacing.medium,
   },
   transactionText: { flex: 1 },
   error: { color: colors.error, fontSize: 15, lineHeight: 22 },

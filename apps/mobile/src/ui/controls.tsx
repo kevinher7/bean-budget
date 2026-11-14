@@ -54,6 +54,34 @@ export function Action({
   );
 }
 
+export function TextAction({
+  title,
+  onPress,
+  disabled = false,
+  selected = false,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+  selected?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.textAction,
+        selected && styles.activeAction,
+        (disabled || pressed) && styles.dim,
+      ]}
+    >
+      <Text style={[styles.buttonText, styles.secondaryButtonText]}>{title}</Text>
+    </Pressable>
+  );
+}
+
 export function Field({
   label,
   hideLabel = false,
@@ -150,6 +178,14 @@ export function Selection({
 }
 
 const styles = StyleSheet.create({
+  textAction: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderBottomWidth: 2,
+    borderColor: colors.surface,
+  },
+  activeAction: { borderColor: colors.primary },
   text: { color: colors.text, fontSize: 16, lineHeight: 23 },
   secondary: { color: colors.secondary, fontSize: 14, lineHeight: 21 },
   heading: { color: colors.text, fontSize: 22, fontWeight: "600" },
