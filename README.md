@@ -38,7 +38,7 @@ The existing `spend-bean` device and its data are preserved. `BEAN_AVD` override
 
 Without direnv, run `nix develop path:./nix` first. On a new host, install Nix and direnv and enable the direnv shell hook; override `ANDROID_HOME` / `ANDROID_AVD_HOME` before entering the environment if your SDK paths differ. The pinned flake supplies Node 22 and JDK 17; the Android SDK stays outside Nix. First activation may download Nix tools.
 
-The Android app supports offline JPY transaction entry, a local ledger, and durable pending operations. It does not synchronize yet; the development build needs Metro running. See the Android guide for manual persistence checks. Web and widgets remain planned; browser validation will use manual spot checks and widget validation will use the Android launcher. Run `npm run check` for the existing format, type, boundary, and lint checks.
+The Android app supports offline JPY and USD entries, a compact register, and durable synchronization with the server. Signed releases bundle JavaScript and start without Metro. See [Android releases and Obtainium updates](docs/ANDROID_RELEASE.md) for building and installing an APK, and [backup and restore](docs/BACKUP.md) for mobile exports and verified server recovery. Run `npm run check` for format, type, boundary, and lint checks.
 
 ## Project
 
@@ -46,7 +46,7 @@ A personal budgeting app with a mobile app, a web app, Android spending widgets,
 
 Inspired by Actual Budget, Bean Budget brings the ideas behind Spend Bean and Mail Bean into one system. The planned stack uses React Native and Expo for mobile, React for web, and Effect for application logic, with shared budgeting rules and data contracts.
 
-The initial JPY ledger server and offline Android slice are implemented; synchronization, web, widgets, and mail imports remain planned.
+The ledger server and offline Android register with foreground synchronization are implemented. Web, widgets, and mail imports remain planned.
 
 Run `npm ci`, set `BEAN_TOKEN`, then run `npm run server`. See [server setup and API examples](docs/SERVER.md).
 
@@ -54,3 +54,5 @@ Run `npm ci`, set `BEAN_TOKEN`, then run `npm run server`. See [server setup and
 - [Preliminary research](docs/RESEARCH.md)
 - [TypeScript and Effect checks](docs/LINTING.md)
 - [Android environment and emulator workflow](docs/ANDROID_DEVELOPMENT.md)
+- [Android releases and Obtainium updates](docs/ANDROID_RELEASE.md)
+- [Backup and restore](docs/BACKUP.md)

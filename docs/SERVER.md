@@ -53,7 +53,7 @@ Input decoding failures are mapped to 400 where requests are decoded. Schema fai
 
 Run `npm run check` for TypeScript, shared import boundaries, typed Oxlint, and official Effect diagnostics. The project does not include automated tests or test fixtures.
 
-This slice has no categories, allocations, transfers, sync feed, Gmail, UI, pagination, account idempotency, or multi-owner auth. Queries currently read an account's full transaction history to calculate balances. Back up SQLite using its online backup facilities or stop the server and copy the database together with any WAL state; restore verification remains operational work before primary-ledger use.
+This slice has no categories, allocations, transfers, sync feed, Gmail, UI, pagination, account idempotency, or multi-owner auth. Queries currently read an account's full transaction history to calculate balances. Use the verified online export and new-path restore commands in [backup and restore](BACKUP.md). Server backups retain accepted data and receipts, while mobile exports also retain unsynchronized edits.
 
 ## Docker Compose
 

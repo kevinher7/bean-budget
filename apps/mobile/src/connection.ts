@@ -17,7 +17,11 @@ export const loadConnection = Effect.tryPromise({
   ),
 );
 
-export const saveConnection = Effect.fn("saveConnection")(function* (url: string, token: string) {
+export const saveConnection = Effect.fn("saveConnection")(function* (
+  url: string,
+  token: string,
+  ledgerServerUrl?: string | null,
+) {
   const normalized = url.trim().replace(/\/+$/, "");
   const valid = yield* Effect.try({
     try: () => {
@@ -37,7 +41,7 @@ export const saveConnection = Effect.fn("saveConnection")(function* (url: string
       )
         throw new Error("HTTPS");
       if (!token.trim()) throw new Error("Token");
-      return { url: normalized, token: token.trim() };
+      return { url: parsed.origin, token: token.trim() };
     },
     catch: () =>
       new ConnectionError({
@@ -45,7 +49,14 @@ export const saveConnection = Effect.fn("saveConnection")(function* (url: string
       }),
   });
   const previous = yield* loadConnection;
-  if (previous && previous.url !== valid.url)
+  const previousUrl = yield* Effect.try({
+    try: () => (previous ? new URL(previous.url).origin : null),
+    catch: () => new ConnectionError({ message: "Cannot validate the saved server URL." }),
+  });
+  if (
+    (previousUrl && previousUrl !== valid.url) ||
+    (ledgerServerUrl && ledgerServerUrl !== valid.url)
+  )
     return yield* Effect.fail(
       new ConnectionError({
         message:

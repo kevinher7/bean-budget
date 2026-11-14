@@ -12,4 +12,6 @@ A stale edit remains failed. Synchronize again to refresh the accepted revision.
 
 Connection credentials belong in platform secure storage. The connection screen accepts the server URL and token; tokens do not belong in public Expo variables. The Android emulator reaches the host at `http://10.0.2.2:3000`. For USB or loopback connections, configure adb reverse as described in [Android development](ANDROID_DEVELOPMENT.md). Use HTTPS for remote servers.
 
-The app requires the development build and Metro described in the Android guide. Database persistence survives force-stop and updates, but uninstalling or clearing app data removes unsynchronized entries.
+The signed Android release bundles JavaScript and starts without Metro. Development builds still use Metro. See [Android release and updates](ANDROID_RELEASE.md) for identity, signing, installation and Obtainium. Database persistence survives force-stop and updates, but uninstalling or clearing app data removes unsynchronized entries.
+
+The Backup screen exports the complete local register, accepted snapshots, ordered outbox operations and original server URL as versioned JSON. Tokens stay in SecureStore. Export writes to a folder selected through Android and verifies the saved bytes. Restore validates the content, shows counts, requires a saved recovery copy and explicit replacement confirmation, then replaces the register in one transaction with verified readback. It rejects a changed register or a different saved server. See [backup and restore](BACKUP.md) for server backups and recovery limits.

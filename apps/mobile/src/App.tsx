@@ -22,8 +22,13 @@ import {
   synchronize,
   resolveConflict,
   acceptServer,
+  exportBackup,
+  inspectBackup,
+  restoreBackup,
+  getServerUrl,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
+import { pickBackupFile, saveBackupFile } from "./backup.ts";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 
@@ -48,7 +53,9 @@ function money(amount: number, currency: "JPY" | "USD") {
 export default function App() {
   const [ledger, setLedger] = useState<Ledger>();
   const [selected, setSelected] = useState("");
-  const [screen, setScreen] = useState<"register" | "entry" | "account" | "connection">("register");
+  const [screen, setScreen] = useState<"register" | "entry" | "account" | "connection" | "backup">(
+    "register",
+  );
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -68,6 +75,13 @@ export default function App() {
   const [url, setUrl] = useState("http://10.0.2.2:3000");
   const [token, setToken] = useState("");
   const [connection, setConnection] = useState<Effect.Success<typeof loadConnection>>(null);
+  const [restore, setRestore] = useState<{
+    text: string;
+    current: string;
+    summary: Effect.Success<ReturnType<typeof inspectBackup>>;
+    recoverySaved: boolean;
+  }>();
+  const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const account = ledger?.accounts.find((row) => row.id === selected) ?? ledger?.accounts[0];
 
   const transactions = (
@@ -113,7 +127,9 @@ export default function App() {
             failure &&
             typeof failure === "object" &&
             "_tag" in failure &&
-            (failure._tag === "ConnectionError" || failure._tag === "LocalStorageError") &&
+            (failure._tag === "ConnectionError" ||
+              failure._tag === "LocalStorageError" ||
+              failure._tag === "BackupFileError") &&
             "message" in failure &&
             typeof failure.message === "string"
           )
@@ -168,7 +184,9 @@ export default function App() {
                     : "Add transaction"
                   : screen === "account"
                     ? "New account"
-                    : "Connection"}
+                    : screen === "backup"
+                      ? "Backup"
+                      : "Connection"}
             </Heading>
             {screen !== "register" && (
               <Action
@@ -201,6 +219,15 @@ export default function App() {
                   title="Connection"
                   disabled={busy}
                   onPress={() => setScreen("connection")}
+                />
+                <TextAction
+                  title="Backup"
+                  disabled={busy || !ledger}
+                  onPress={() => {
+                    setRestore(undefined);
+                    setRestoreConfirmation("");
+                    setScreen("backup");
+                  }}
                 />
               </View>
               <ScrollView
@@ -575,6 +602,7 @@ export default function App() {
           )}
           {screen === "connection" && (
             <>
+              <Label muted>Use HTTPS for installed releases.</Label>
               <Field
                 label="Server URL"
                 value={url}
@@ -601,14 +629,125 @@ export default function App() {
                 title="Save connection"
                 disabled={busy || !token.trim()}
                 onPress={() =>
-                  run(saveConnection(url, token), (value) => {
-                    setConnection(value);
-                    setToken("");
-                    setMessage("Connection saved.");
-                  })
+                  run(
+                    getServerUrl.pipe(
+                      Effect.flatMap((serverUrl) => saveConnection(url, token, serverUrl)),
+                    ),
+                    (value) => {
+                      setConnection(value);
+                      setToken("");
+                      setMessage("Connection saved.");
+                    },
+                  )
                 }
               />
               <Action title="Sync now" secondary disabled={busy || !connection} onPress={sync} />
+            </>
+          )}
+          {screen === "backup" && (
+            <>
+              <Label>
+                Mobile backup includes this register and every waiting or failed operation.
+              </Label>
+              <Label muted>
+                Files contain financial data without encryption. Store them privately. Access tokens
+                are excluded. A server backup does not include unsynchronized mobile entries.
+              </Label>
+              <Action
+                title="Export mobile backup"
+                disabled={busy}
+                onPress={() =>
+                  run(exportBackup.pipe(Effect.flatMap(saveBackupFile)), (name) => {
+                    setMessage(`Saved and verified ${name}`);
+                  })
+                }
+              />
+              <Action
+                title="Choose backup to restore"
+                secondary
+                disabled={busy}
+                onPress={() =>
+                  run(
+                    Effect.gen(function* () {
+                      const text = yield* pickBackupFile;
+                      if (text === null) return null;
+                      const summary = yield* inspectBackup(text);
+                      const current = yield* exportBackup;
+                      return { text, current, summary, recoverySaved: false };
+                    }),
+                    (value) => {
+                      setRestore(value ?? undefined);
+                      setRestoreConfirmation("");
+                    },
+                  )
+                }
+              />
+              {restore && (
+                <View style={styles.section}>
+                  <Heading>Review restore</Heading>
+                  <Label>
+                    Saved{" "}
+                    {new Date(restore.summary.createdAt).toLocaleString("en-GB", {
+                      timeZone: "Asia/Tokyo",
+                    })}{" "}
+                    JST
+                  </Label>
+                  <Label>
+                    Accounts {restore.summary.accounts} · Entries {restore.summary.transactions} ·{" "}
+                    Waiting {restore.summary.pending} · Failed {restore.summary.failed}
+                  </Label>
+                  <Label muted>{restore.summary.serverUrl ?? "Never connected to a server"}</Label>
+                  <Label>
+                    Restore replaces this device's entire register, including its{" "}
+                    {ledger?.pending ?? 0} waiting operations. Save a recovery copy first. It will
+                    not merge the two registers.
+                  </Label>
+                  <Action
+                    title={
+                      restore.recoverySaved
+                        ? "Recovery copy saved"
+                        : "Save current register before replacing"
+                    }
+                    secondary
+                    disabled={busy || restore.recoverySaved}
+                    onPress={() =>
+                      run(saveBackupFile(restore.current), () => {
+                        setRestore({ ...restore, recoverySaved: true });
+                      })
+                    }
+                  />
+                  <Field
+                    label="Type RESTORE to confirm replacement"
+                    value={restoreConfirmation}
+                    onChangeText={setRestoreConfirmation}
+                    editable={!busy}
+                  />
+                  <Action
+                    title="Replace register with backup"
+                    disabled={busy || !restore.recoverySaved || restoreConfirmation !== "RESTORE"}
+                    onPress={() =>
+                      run(
+                        restoreBackup(restore.text, restore.current, connection?.url),
+                        (value) => {
+                          setLedger(value);
+                          setSelected("");
+                          setRestore(undefined);
+                          setRestoreConfirmation("");
+                          setMessage(
+                            "Restored and verified. Reconnect to the original server before synchronizing.",
+                          );
+                          setScreen("register");
+                        },
+                      )
+                    }
+                  />
+                  <TextAction
+                    title="Cancel restore"
+                    disabled={busy}
+                    onPress={() => setRestore(undefined)}
+                  />
+                </View>
+              )}
             </>
           )}
         </ScrollView>
