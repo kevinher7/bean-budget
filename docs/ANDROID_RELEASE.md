@@ -37,7 +37,7 @@ source "$HOME/.config/bean-budget/android-signing/signing.env"
 npm run android:release
 ```
 
-The build uses SDK platform 37, build tools 37.0.0, JDK 17, NDK 27.1.12297006 and CMake 3.22.1. Run `npm run android:doctor` for the host setup. Expo prebuild writes the generated native project; Gradle's `assembleRelease` embeds the bundle. The local plugin replaces Expo's debug signing fallback with release credentials. Missing credentials fail the build. [Expo local release builds](https://docs.expo.dev/guides/local-app-production/)
+The build uses SDK platform 37.0, build tools 37.0.0, JDK 17, NDK 27.1.12297006 and CMake 3.22.1. CI pins command-line tools archive `16111833`, version 23, so SDK Manager can discover the `platforms;android-37.0` package. Run `npm run android:doctor` for the host setup. Expo prebuild writes the generated native project; Gradle's `assembleRelease` embeds the bundle. The local plugin replaces Expo's debug signing fallback with release credentials. Missing credentials fail the build. [Expo local release builds](https://docs.expo.dev/guides/local-app-production/)
 
 Output defaults to `.local/android-release/`:
 

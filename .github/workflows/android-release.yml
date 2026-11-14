@@ -26,9 +26,10 @@ jobs:
           java-version: 17
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
+          cmdline-tools-version: 16111833
           packages: platform-tools
       - name: Install Android components
-        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
       - run: npm ci
       - run: npm run check
       - name: Build and verify signed APK
