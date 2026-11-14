@@ -1,12 +1,11 @@
 {
   "expo": {
-    "name": "Bean Budget Dev",
+    "name": "Bean Budget",
     "slug": "bean-budget",
-    "scheme": "bean-budget-dev",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "android": {
-      "package": "app.beanbudget.dev"
-    },
-    "plugins": ["expo-dev-client", "expo-sqlite", "expo-secure-store"]
+      "package": "app.beanbudget",
+      "versionCode": 1
+    }
   }
 }

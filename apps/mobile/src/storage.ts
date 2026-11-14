@@ -13,6 +13,15 @@ import {
 } from "@bean-budget/protocol";
 import { openDatabaseSync, type SQLiteDatabase } from "expo-sqlite";
 import { randomUUID } from "expo-crypto";
+import { loadConnection } from "./connection.ts";
+import {
+  Operation,
+  backupContent,
+  backupSummary,
+  decodeBackup,
+  normalizeServerUrl,
+  type MobileBackup,
+} from "./backup.ts";
 
 export class LocalStorageError extends Data.TaggedError("LocalStorageError")<{
   message: string;
@@ -20,13 +29,6 @@ export class LocalStorageError extends Data.TaggedError("LocalStorageError")<{
 }> {}
 
 const Snapshot = RegisterSnapshot;
-const Operation = Schema.Struct({
-  operationId: Schema.String,
-  kind: Schema.Literals(["account", "category", "payee", "create", "edit"]),
-  localId: Schema.String,
-  payload: Schema.String,
-  error: Schema.NullOr(Schema.String),
-});
 type Operation = typeof Operation.Type;
 type RecordKind = "accounts" | "categories" | "payees" | "transactions";
 let database: SQLiteDatabase;
@@ -37,11 +39,16 @@ function records<S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
 ): S["Type"][] {
   return database
-    .getAllSync<{ payload: string }>(
-      "SELECT payload FROM records WHERE kind = ? ORDER BY rowid",
+    .getAllSync<{ id: string; payload: string }>(
+      "SELECT id,payload FROM records WHERE kind = ? ORDER BY rowid",
       kind,
     )
-    .map((row) => Schema.decodeUnknownSync(schema)(JSON.parse(row.payload)));
+    .map((row) => {
+      const value = Schema.decodeUnknownSync(schema)(JSON.parse(row.payload));
+      if (typeof value !== "object" || value === null || !("id" in value) || value.id !== row.id)
+        throw new Error("Local record ID differs from its content");
+      return value;
+    });
 }
 
 function put<T extends { readonly id: string }>(kind: RecordKind, value: T) {
@@ -75,7 +82,7 @@ function assertBalances(accountId: string, rows: readonly (typeof Transaction.Ty
   balance(relevant.filter((row) => row.status !== "pending").map((row) => row.amount));
 }
 
-export const initialize = Effect.try({
+const initializeDatabase = Effect.try({
   try: () => {
     database = openDatabaseSync("bean-budget.sqlite");
     database.execSync("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
@@ -83,7 +90,13 @@ export const initialize = Effect.try({
       const version = database.getFirstSync<{ user_version: number }>(
         "PRAGMA user_version",
       )?.user_version;
-      if (version === 2) return;
+      if (version === 3) return;
+      if (version === 2) {
+        database.execSync(
+          "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
+        );
+        return;
+      }
       if (version !== 0 && version !== 1) throw new Error("Unsupported local database version");
       database.execSync(
         "CREATE TABLE records(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE accepted(id TEXT PRIMARY KEY,payload TEXT NOT NULL);",
@@ -132,10 +145,159 @@ export const initialize = Effect.try({
         }
         database.execSync("DROP TABLE legacy_outbox; DROP TABLE transactions;");
       }
-      database.execSync("PRAGMA user_version=2;");
+      database.execSync(
+        "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
+      );
     });
   },
   catch: (cause) => new LocalStorageError({ message: "Could not open local ledger", cause }),
+});
+
+export const getServerUrl = Effect.try({
+  try: () =>
+    database.getFirstSync<{ value: string }>("SELECT value FROM metadata WHERE name='serverUrl'")
+      ?.value ?? null,
+  catch: (cause) => new LocalStorageError({ message: "Could not read the ledger server", cause }),
+});
+
+function bindServer(url: string) {
+  const normalized = normalizeServerUrl(url);
+  const previous = database.getFirstSync<{ value: string }>(
+    "SELECT value FROM metadata WHERE name='serverUrl'",
+  )?.value;
+  if (previous && previous !== normalized)
+    throw new Error("This ledger belongs to another server. Use its original server URL.");
+  database.runSync(
+    "INSERT INTO metadata(name,value) VALUES('serverUrl',?) ON CONFLICT(name) DO NOTHING",
+    normalized,
+  );
+}
+
+export const initialize = Effect.gen(function* () {
+  yield* initializeDatabase;
+  const connection = yield* loadConnection;
+  if (connection)
+    yield* Effect.try({
+      try: () => bindServer(connection.url),
+      catch: (cause) =>
+        new LocalStorageError({
+          message: "Saved connection differs from the ledger server",
+          cause,
+        }),
+    });
+});
+
+function readBackup(): MobileBackup {
+  if (
+    database.getFirstSync(
+      "SELECT id FROM records WHERE kind NOT IN ('accounts','categories','payees','transactions') LIMIT 1",
+    )
+  )
+    throw new Error("Unknown local record kind");
+  const value = {
+    format: "bean-budget-mobile" as const,
+    version: 1 as const,
+    createdAt: new Date().toISOString(),
+    serverUrl:
+      database.getFirstSync<{ value: string }>("SELECT value FROM metadata WHERE name='serverUrl'")
+        ?.value ?? null,
+    accounts: records("accounts", Account),
+    categories: records("categories", NamedRecord),
+    payees: records("payees", NamedRecord),
+    transactions: records("transactions", Transaction),
+    accepted: database
+      .getAllSync<{ id: string; payload: string }>("SELECT id,payload FROM accepted ORDER BY rowid")
+      .map((row) => {
+        const transaction = Schema.decodeUnknownSync(Schema.fromJsonString(Transaction))(
+          row.payload,
+        );
+        if (transaction.id !== row.id)
+          throw new Error("Accepted record ID differs from its content");
+        return transaction;
+      }),
+    outbox: operations(),
+  };
+  return decodeBackup(JSON.stringify(value));
+}
+
+export const exportBackup = Effect.try({
+  try: () => {
+    if (syncing) throw new Error("Wait for synchronization to finish before exporting");
+    let text = "";
+    database.withTransactionSync(() => {
+      text = JSON.stringify(readBackup(), null, 2);
+    });
+    return text;
+  },
+  catch: (cause) => new LocalStorageError({ message: "Could not export the mobile backup", cause }),
+});
+
+export const inspectBackup = Effect.fn("inspectBackup")(function* (text: string) {
+  return yield* Effect.try({
+    try: () => backupSummary(decodeBackup(text)),
+    catch: (cause) =>
+      new LocalStorageError({ message: "Invalid or unsupported mobile backup", cause }),
+  });
+});
+
+export const restoreBackup = Effect.fn("restoreBackup")(function* (
+  text: string,
+  expectedCurrentBackup: string,
+  savedServerUrl?: string,
+) {
+  yield* Effect.try({
+    try: () => {
+      if (syncing) throw new Error("Wait for synchronization to finish before restoring");
+      const backup = decodeBackup(text);
+      const expected = decodeBackup(expectedCurrentBackup);
+      if (
+        savedServerUrl &&
+        backup.serverUrl &&
+        normalizeServerUrl(savedServerUrl) !== backup.serverUrl
+      )
+        throw new Error("Backup belongs to another server. Its original server URL is required.");
+      database.withTransactionSync(() => {
+        if (backupContent(readBackup()) !== backupContent(expected))
+          throw new Error(
+            "The ledger changed after restore confirmation. Review the backup again.",
+          );
+        database.execSync(
+          "DELETE FROM outbox; DELETE FROM accepted; DELETE FROM records; DELETE FROM metadata;",
+        );
+        for (const kind of ["accounts", "categories", "payees", "transactions"] as const)
+          for (const row of backup[kind]) put(kind, row);
+        for (const row of backup.accepted)
+          database.runSync(
+            "INSERT INTO accepted(id,payload) VALUES(?,?)",
+            row.id,
+            JSON.stringify(row),
+          );
+        for (const row of backup.outbox)
+          database.runSync(
+            "INSERT INTO outbox(operationId,kind,localId,payload,error) VALUES(?,?,?,?,?)",
+            row.operationId,
+            row.kind,
+            row.localId,
+            row.payload,
+            row.error,
+          );
+        if (backup.serverUrl !== null)
+          database.runSync(
+            "INSERT INTO metadata(name,value) VALUES('serverUrl',?)",
+            backup.serverUrl,
+          );
+        if (backupContent(readBackup()) !== backupContent(backup))
+          throw new Error("Restored content differs from backup. Restore rolled back.");
+      });
+    },
+    catch: (cause) =>
+      new LocalStorageError({
+        message:
+          cause instanceof Error ? cause.message : "Restore failed. The current ledger was kept.",
+        cause,
+      }),
+  });
+  return yield* loadLedger();
 });
 
 export const loadLedger = Effect.fn("loadLedger")(function* () {
@@ -418,6 +580,11 @@ export const synchronize = Effect.fn("synchronize")(function* (connection: {
     );
   syncing = true;
   return yield* Effect.gen(function* () {
+    yield* Effect.try({
+      try: () => bindServer(connection.url),
+      catch: (cause) =>
+        new LocalStorageError({ message: "Use this ledger's original server URL", cause }),
+    });
     const initial = yield* request(connection, "GET", "/register").pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
     );

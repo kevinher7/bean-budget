@@ -10,6 +10,7 @@ require() {
 case "${1:-}" in
   build|dev)
     action="$1"
+    export BEAN_APP_VARIANT=development
     require adb
     require node
     if [[ -z "${ANDROID_SERIAL:-}" ]]; then
@@ -27,6 +28,7 @@ case "${1:-}" in
     adb -s "$ANDROID_SERIAL" reverse tcp:8081 tcp:8081
     cd "$(dirname "$0")/../apps/mobile"
     if [[ "$action" == build ]]; then
+      npx expo prebuild --platform android --clean --no-install
       exec npx expo run:android --device "$ANDROID_SERIAL" --port 8081
     fi
     if ! adb -s "$ANDROID_SERIAL" shell pm path app.beanbudget.dev | grep -q package:; then

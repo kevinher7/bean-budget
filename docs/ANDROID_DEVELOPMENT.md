@@ -82,7 +82,7 @@ adb -s emulator-5554 shell getprop sys.boot_completed
 
 Proceed when `sys.boot_completed` returns `1`; appearing in adb alone does not mean Android has finished booting. [adb device selection](https://developer.android.com/tools/adb)
 
-The development client is installed as a dependency of `apps/mobile`. Use the root `android:build` and `android:dev` commands described below. This slice always uses a separate development identity; it has no release variant yet.
+The development client is installed as a dependency of `apps/mobile`. Use the root `android:build` and `android:dev` commands described below. Development uses a separate app identity. The standalone release and isolated verification variant are described in [Android release and updates](ANDROID_RELEASE.md).
 
 Rebuild after native dependency or config-plugin changes, not after every screen change. Keep `android/` generated and make native configuration through app config/plugins. Use a clean prebuild deliberately after native configuration changes; it replaces the generated native directory. [Expo local build and reload workflow](https://docs.expo.dev/guides/local-app-development/)
 

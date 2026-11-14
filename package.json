@@ -28,7 +28,10 @@
     "logs": "bash tools/compose.sh logs --follow server",
     "android:build": "bash tools/android.sh build",
     "android:dev": "bash tools/android.sh dev",
-    "check:ui-colors": "node tools/check-ui-colors.mts"
+    "check:ui-colors": "node tools/check-ui-colors.mts",
+    "android:release": "bash tools/android-release.sh",
+    "android:signing-key": "bash tools/android-release.sh keygen",
+    "server:backup": "tsx tools/server-backup.mts"
   },
   "dependencies": {
     "effect": "4.1.2"
