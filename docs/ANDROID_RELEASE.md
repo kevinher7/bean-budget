@@ -4,7 +4,7 @@ Bean Budget builds an installable ARM64 APK with embedded Hermes JavaScript. It 
 
 ## App identity
 
-`apps/mobile/app.json` owns the release version and Android version code. The first release is `0.1.0`, code `1`. Increase both before each distributed update and keep the GitHub tag equal to `v<version>`. Android updates require the same package and signing certificate, with a higher version code. [Android versioning](https://developer.android.com/studio/publish/versioning)
+`apps/mobile/app.json` owns the release version and Android version code. The first release is `0.0.1`, code `1`. Increase both before each distributed update and keep the GitHub tag equal to `v<version>`. Android updates require the same package and signing certificate, with a higher version code. [Android versioning](https://developer.android.com/studio/publish/versioning)
 
 | Variant                | Package                | Build                                  |
 | ---------------------- | ---------------------- | -------------------------------------- |
@@ -41,7 +41,7 @@ The build uses SDK platform 37, build tools 37.0.0, JDK 17, NDK 27.1.12297006 an
 
 Output defaults to `.local/android-release/`:
 
-- `bean-budget-0.1.0-arm64-v8a.apk`
+- `bean-budget-0.0.1-arm64-v8a.apk`
 - `SHA256SUMS`
 - `signature.txt`, including the signing certificate SHA-256
 - `apk-info.txt`, including package and version
@@ -71,7 +71,7 @@ The workflow token has only `contents: read`; all unspecified permissions are di
 
 ## GitHub releases and Obtainium
 
-After explicit approval to publish, create a GitHub release for the reviewed main commit. Use tag `v0.1.0` and attach the APK, checksum, public certificate report and source commit. Later releases use the same package and certificate with higher version values. Do not replace an existing release asset with different bytes. Retain old artifacts for recovery, but do not downgrade an installed app or clear data to make an older APK install.
+After explicit approval to publish, create a GitHub release for the reviewed main commit. Use tag `v0.0.1` and attach the APK, checksum, public certificate report and source commit. Later releases use the same package and certificate with higher version values. Do not replace an existing release asset with different bytes. Retain old artifacts for recovery, but do not downgrade an installed app or clear data to make an older APK install.
 
 Add `https://github.com/kevinher7/bean-budget` as a GitHub source in Obtainium. Filter APK names with `^bean-budget-[0-9]+\.[0-9]+\.[0-9]+-arm64-v8a\.apk$`, exclude prereleases and drafts, and enable Verify Latest Tag if releases use GitHub's Latest marker. Actions artifacts are not an Obtainium update source. A published GitHub release with an attached APK is required. [Obtainium source options](https://wiki.obtainium.imranr.dev/sources/)
 
