@@ -2,9 +2,9 @@
 
 Decision date: 5 November 2026.
 
-Bean Budget will use one monorepo with separate mobile, web, and backend applications. The clients share budgeting rules and network contracts while providing interfaces suited to their platforms. Mobile supports offline reads and edits; the initial web application requires connectivity for reads and writes, with an in-memory query cache. The backend coordinates accepted changes and runs mail ingestion.
+Bean Budget will use one monorepo with separate mobile, web, and backend applications. The clients share budgeting rules and network contracts while providing interfaces suited to their platforms. Mobile supports offline reads and edits; the initial web application requires connectivity for reads and writes, with an in-memory query cache. The backend coordinates accepted changes. Mail ingestion remains planned.
 
-The [preliminary research](RESEARCH.md) records the Actual Budget exploration and alternatives considered. This document captures the subsequent architecture decisions and takes precedence where the proposals differ. The [initial ledger server and shared packages](SERVER.md) are implemented as of 7 November 2026. Mobile, web, synchronization, widgets, and mail ingestion remain planned; the sections below describe the intended whole system.
+The [preliminary research](RESEARCH.md) records the Actual Budget exploration and alternatives considered. This document captures the subsequent architecture decisions and takes precedence where the proposals differ. The [initial ledger server and shared packages](SERVER.md) are implemented as of 7 November 2026. Mobile now implements the offline register, durable foreground snapshot synchronization, explicit transaction conflict recovery and verified local backup/restore. The server implements the ledger and tracking-budget foundation, including schedules, transfers and period summaries. Android widgets read the committed mobile register locally. Web, mail ingestion and incremental change feeds remain planned; the sections below describe the intended whole system.
 
 ## Project structure
 
@@ -64,6 +64,8 @@ bean-budget/
     ARCHITECTURE.md
 ```
 
+Native Expo modules and their config plugins live together under `apps/mobile/modules/<module>/`. Mobile root JavaScript and TypeScript files are limited to the required app config and entry point, enforced by `check:layout`.
+
 These directories describe ownership boundaries. Create modules as their behavior is implemented rather than scaffolding empty files or introducing an abstraction for every entity.
 
 ## Separate mobile and web interfaces
@@ -100,7 +102,7 @@ The backend owns accepted synchronized state. All client writes and mail imports
 
 Screens and widgets read local SQLite. An offline mutation saves its local effect and a durable outbox operation atomically, then refreshes the visible state and widget summary. The operation remains identifiable as pending until the server accepts it.
 
-Synchronization sends pending operations, receives accepted changes, and reconciles local data. Incoming accepted records must not silently erase pending user edits. Rejected or conflicting operations retain enough information for an explicit recovery path. The exact representation of accepted records and pending changes will be settled in the synchronization design.
+Synchronization sends pending operations, receives accepted changes, and reconciles local data. Incoming accepted records must not silently erase pending user edits. Rejected or conflicting operations retain enough information for an explicit recovery path. The current register stores accepted transaction snapshots separately from local records and ordered outbox operations. Full register snapshots preserve queued local edits and reconcile stable operation receipts before replacing provisional transaction IDs. See [mobile register](MOBILE.md).
 
 ### Web
 
@@ -116,11 +118,11 @@ Mail imports and edits on another client must become visible to connected client
 
 Start with explicit domain commands such as `CreateTransaction`, `EditTransaction`, and `CreateTransfer`. Each submitted operation has a stable ID for safe retries. Edits include the record revision they were based on so the server can detect stale changes.
 
-The backend commits operation receipts, financial mutations, and ordered change-feed entries in one database transaction. Repeating an accepted operation must not repeat its financial effect. Transfers, split edits, and other multi-record financial changes remain atomic domain operations.
+The backend commits operation receipts and financial mutations in one database transaction. A future incremental sync implementation must include ordered change-feed entries in that transaction. Repeating an accepted operation must not repeat its financial effect. Transfers, split edits, and other multi-record financial changes remain atomic domain operations.
 
-Clients pull changes after a cursor. Applying an incoming batch and advancing that cursor must be atomic locally. Deletions require tombstones or an equivalent explicit deletion representation. Change retention, expired cursors, resnapshot behavior, and protocol versioning need a concrete design before synchronization is implemented.
+Clients pull changes after a cursor. Applying an incoming batch and advancing that cursor must be atomic locally. Deletions require tombstones or an equivalent explicit deletion representation. The implemented first mobile slice uses complete register snapshots and has no deletions. Change retention, expired cursors, resnapshot behavior and protocol versioning need a concrete design before adding incremental synchronization.
 
-A stale edit produces an explicit conflict rather than silently overwriting a financial change using device timestamps. Conflict presentation and recovery are implementation decisions still to be resolved. This architecture does not promise automatic merging of concurrent offline edits.
+A stale edit produces an explicit conflict rather than silently overwriting a financial change using device timestamps. The mobile register supports explicit "Keep local edit" and "Use server" recovery for transaction metadata and posting conflicts. Planning replacements still need a conflict policy before offline planning edits. This architecture does not promise automatic merging of concurrent offline edits.
 
 The change feed supports replication of current state. It does not commit the project to event sourcing or CRDTs. Ongoing two-way compatibility with Actual's sync protocol is outside the initial design; Actual is a behavioral reference and migration source.
 
@@ -138,7 +140,9 @@ Import idempotency and matching a mail purchase to a manually entered purchase a
 
 Android widgets render the latest committed local summary immediately, with an update time or freshness indication. App mutations and successful synchronization refresh that summary and request a widget redraw. Rendering must not wait for a network round trip.
 
-Headless widget execution and app execution must coordinate access to local storage. Validate this behavior on a real Android device, including cold starts and overlapping writes. Backend imports become visible after the device receives and applies changes; immediate background delivery is not guaranteed while the operating system suspends the app.
+Android widget providers open the existing SQLite database read-only and query a single committed snapshot. They never initialize or migrate the database, start JavaScript or perform network work. The app requests a redraw after reading the register following a mutation, sync or restore. Validate real-device cold starts and overlapping writes on the Pixel after emulator verification. Backend imports become visible after the device receives and applies changes; immediate background delivery is not guaranteed while the operating system suspends the app.
+
+The spending design previews reproduce Spend Bean's square and wide TODAY/WEEK bars with explicitly hardcoded demo inputs. Their picker labels and visible DEMO marker distinguish them from the live local balance widget. They do not read or write financial records. Real budget inputs remain separate integration work.
 
 ## Trust and operations
 

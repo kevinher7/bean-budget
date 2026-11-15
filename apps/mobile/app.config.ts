@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { env } from "node:process";
 import type { ConfigContext, ExpoConfig } from "expo/config";
+import { withWidgets } from "./modules/bean-widgets/with-widgets.ts";
 import {
   AndroidConfig,
   withAndroidManifest,
@@ -72,6 +73,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       return mod;
     },
   ]);
+  nativeConfig = withWidgets(nativeConfig);
   if (development) return nativeConfig;
   return withAppBuildGradle(nativeConfig, (mod) => {
     const signing = "    signingConfigs {";

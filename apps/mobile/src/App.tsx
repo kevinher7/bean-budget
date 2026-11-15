@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Linking,
   Pressable,
   ScrollView,
   StatusBar,
@@ -57,6 +58,7 @@ export default function App() {
     "register",
   );
   const [busy, setBusy] = useState(true);
+  const [widgetRoute, setWidgetRoute] = useState<"entry" | "register">();
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [amount, setAmount] = useState("");
@@ -114,6 +116,42 @@ export default function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    function openWidgetUrl(url: string | null | undefined) {
+      if (!url) return;
+      const route = url.split("://")[1];
+      if (route === "entry" || route === "register") setWidgetRoute(route);
+    }
+    Linking.getInitialURL().then(openWidgetUrl, () =>
+      setError("Could not open the widget shortcut. Open the register to add an entry."),
+    );
+    const subscription = Linking.addEventListener("url", ({ url }) => openWidgetUrl(url));
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!widgetRoute || busy || !ledger) return;
+    setWidgetRoute(undefined);
+    if (screen !== "register") return;
+    if (widgetRoute === "register") {
+      setScreen("register");
+      return;
+    }
+    setEditId(undefined);
+    setClassificationKind(undefined);
+    setClassificationName("");
+    setError("");
+    setMessage("");
+    setAmount("");
+    setNotes("");
+    setDate(today());
+    setIncome(false);
+    setPending(false);
+    setCategory("");
+    setPayee("");
+    setScreen(ledger.accounts.length ? "entry" : "account");
+  }, [widgetRoute, busy, ledger, screen]);
 
   function run<A, E>(effect: Effect.Effect<A, E>, onSuccess: (value: A) => void) {
     if (busy) return;
@@ -206,6 +244,11 @@ export default function App() {
             </Text>
           )}
           {message !== "" && <Label>{message}</Label>}
+          {ledger?.widgetWarning && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {ledger.widgetWarning}
+            </Text>
+          )}
           {busy && <Label muted>Working...</Label>}
           {screen === "register" && (
             <>

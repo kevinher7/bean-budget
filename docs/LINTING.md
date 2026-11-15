@@ -52,3 +52,12 @@ The server uses pinned `@effect/sql-sqlite-node` 4.1.2 with Effect 4.1.2 and Nod
 ## Mobile colors
 
 `check:ui-colors` parses mobile TypeScript and TSX with the TypeScript AST. Color style properties and JSX color props must use `colors` imported from `apps/mobile/src/ui/theme.ts`, including aliased imports. It checks computed string property names and rejects shorthand color properties. Literal hex, RGB and HSL colors outside that token module are rejected too. Conditional color choices must use tokens in both branches. Keep palette literals in the token module; add a semantic role there when the interface needs another color.
+
+## Mobile root placement
+
+`npm run check:layout` checks the immediate children of `apps/mobile`. `npm run check` runs it before TypeScript so misplaced files receive a placement hint first.
+
+- `mobile-root-source` permits only `app.config.ts` and `index.ts` as root JavaScript or TypeScript sources. Application code belongs under `src/`. Expo module config plugins belong beside their module under `modules/<module>/`, such as `modules/bean-widgets/with-widgets.ts`. Moving a file also requires updating its imports. Add a narrow filename exception in the checker only when a framework requires that exact root filename.
+- `mobile-root-directory` permits `src`, `modules`, `assets`, generated `android` and `ios` projects, `.expo`, `node_modules`, `build` and `dist`. Feature directories belong under `src`; native modules and their plugins belong under `modules`.
+
+These rules check placement, not file contents. They allow root package/configuration JSON and documentation. They do not inspect generated directories or impose a layout inside the approved source and module directories. Each error includes its rule name, the offending path and instructions for relocating the file or folder.

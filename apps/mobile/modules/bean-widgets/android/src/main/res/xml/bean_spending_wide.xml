@@ -1,0 +1,11 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:minWidth="250dp"
+  android:minHeight="40dp"
+  android:targetCellWidth="4"
+  android:targetCellHeight="1"
+  android:initialLayout="@layout/bean_spending_wide"
+  android:previewLayout="@layout/bean_spending_wide"
+  android:description="@string/bean_widget_spending_description"
+  android:resizeMode="none"
+  android:updatePeriodMillis="0"
+  android:widgetCategory="home_screen" />

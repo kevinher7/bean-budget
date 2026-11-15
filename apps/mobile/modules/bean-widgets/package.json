@@ -1,0 +1,6 @@
+{
+  "name": "bean-widgets",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module"
+}
