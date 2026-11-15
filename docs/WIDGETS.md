@@ -53,7 +53,7 @@ Screenshots captured through a temporary Android `AppWidgetHost` show the provid
 
 The live balance widget requires 180 dp for both initial placement and resizing so maximum signed amounts remain readable. It omits target-cell sizing because Android 12 and later use it instead of the dp minimum. Cell counts depend on the launcher.
 
-Actual screenshot assets live in [docs/images/widgets](images/widgets). The PR embeds the PNGs through URLs pinned to their Git commit. Full screenshots remain local; committed crops retain the actual widget pixels with a small margin. No screenshot contains private financial data.
+Screenshot evidence is embedded in [PR #13](https://github.com/kevinher7/bean-budget/pull/13) through URLs pinned to the earlier screenshot commit. The current documentation tree contains no screenshot assets. Full captures remain local; the PR images use actual widget pixels and synthetic data.
 
 ## References
 
