@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { env } from "node:process";
 import type { ConfigContext, ExpoConfig } from "expo/config";
-import { withWidgets } from "./with-widgets.ts";
+import { withWidgets } from "./modules/bean-widgets/with-widgets.ts";
 import {
   AndroidConfig,
   withAndroidManifest,

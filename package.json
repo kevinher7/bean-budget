@@ -16,7 +16,7 @@
     "lint:fix": "oxlint --type-aware --fix .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "check": "npm run format:check && npm run typecheck && npm run check:boundaries && npm run check:ui-colors && npm run lint",
+    "check": "npm run format:check && npm run check:layout && npm run typecheck && npm run check:boundaries && npm run check:ui-colors && npm run lint",
     "server": "tsx apps/server/src/main.ts",
     "dev:server": "bash scripts/dev-server.sh",
     "check:boundaries": "node tools/check-boundaries.mts",
@@ -31,7 +31,8 @@
     "check:ui-colors": "node tools/check-ui-colors.mts",
     "android:release": "bash scripts/android-release.sh",
     "android:signing-key": "bash scripts/android-release.sh keygen",
-    "server:backup": "tsx apps/server/src/backup.mts"
+    "server:backup": "tsx apps/server/src/backup.mts",
+    "check:layout": "node tools/check-layout.mts"
   },
   "dependencies": {
     "effect": "4.1.2"

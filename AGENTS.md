@@ -21,8 +21,10 @@ Inline trivial forwarding wrappers rather than creating abstractions just to sho
 
 Keep `tools/` for lint checks only. Put operational shell commands in `scripts/`.
 
+Keep mobile application code under `apps/mobile/src/` and native Expo modules with their config plugins under `apps/mobile/modules/<module>/`. Only `app.config.ts` and `index.ts` belong at the mobile root as JavaScript or TypeScript sources. `check:layout` enforces this placement and reports relocation instructions.
+
 - Use `npm run format` for Oxfmt formatting. Separate top-level function, class, and schema declarations with a blank line; Oxfmt preserves these lines but does not insert them automatically.
-- Run `npm run check` before declaring a code or configuration change complete. It runs Oxfmt, TypeScript, import boundary checks, typed Oxlint, and the official Effect diagnostic CLI; warnings fail the check.
+- Run `npm run check` before declaring a code or configuration change complete. It runs Oxfmt, mobile file placement, TypeScript, import boundary checks, typed Oxlint, and the official Effect diagnostic CLI; warnings fail the check.
 - Do not add tests or test fixtures unless the user explicitly requests them. This project uses typechecking, import boundary checks, and linting.
 - Plain `tsc` does not run Effect diagnostics. Keep `lint:effect` in the check pipeline; no TypeScript installation patch is required.
 

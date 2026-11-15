@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDangerousMod, type ConfigPlugin } from "expo/config-plugins";
-import { colors } from "./src/ui/theme.ts";
+import { colors } from "../../src/ui/theme.ts";
 
 export const withWidgets: ConfigPlugin = (config) =>
   withDangerousMod(config, [

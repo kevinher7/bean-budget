@@ -31,7 +31,7 @@ Mobile schema 4 adds triggers on local records and outbox changes to record `wid
 
 Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Backup format 1 excludes these operational timestamps and remains compatible. Older application binaries reject schema 4; retain a verified mobile export before updating.
 
-`apps/mobile/with-widgets.ts` generates native color resources from `src/ui/theme.ts` during Expo prebuild. Generated Android projects stay ignored. The palette keep rule retains colors selected dynamically under release resource shrinking.
+`apps/mobile/modules/bean-widgets/with-widgets.ts` generates native color resources from `src/ui/theme.ts` during Expo prebuild. Generated Android projects stay ignored. The palette keep rule retains colors selected dynamically under release resource shrinking.
 
 ## Verification
 

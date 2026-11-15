@@ -64,6 +64,8 @@ bean-budget/
     ARCHITECTURE.md
 ```
 
+Native Expo modules and their config plugins live together under `apps/mobile/modules/<module>/`. Mobile root JavaScript and TypeScript files are limited to the required app config and entry point, enforced by `check:layout`.
+
 These directories describe ownership boundaries. Create modules as their behavior is implemented rather than scaffolding empty files or introducing an abstraction for every entity.
 
 ## Separate mobile and web interfaces
