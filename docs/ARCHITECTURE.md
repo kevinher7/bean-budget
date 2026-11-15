@@ -140,6 +140,8 @@ Android widgets render the latest committed local summary immediately, with an u
 
 Android widget providers open the existing SQLite database read-only and query a single committed snapshot. They never initialize or migrate the database, start JavaScript or perform network work. The app requests a redraw after reading the register following a mutation, sync or restore. Validate real-device cold starts and overlapping writes on the Pixel after emulator verification. Backend imports become visible after the device receives and applies changes; immediate background delivery is not guaranteed while the operating system suspends the app.
 
+The spending design previews reproduce Spend Bean's square and wide TODAY/WEEK bars with explicitly hardcoded demo inputs. Their picker labels and visible DEMO marker distinguish them from the live local balance widget. They do not read or write financial records. Real budget inputs remain separate integration work.
+
 ## Trust and operations
 
 The initial model assumes a personal, self-hosted backend that may read budget data. Gmail credentials stay on the backend; mobile credentials use platform-appropriate secure storage. Authentication and transport security must be specified before exposing the API.

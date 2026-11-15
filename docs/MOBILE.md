@@ -18,7 +18,7 @@ The Backup screen exports the complete local register, accepted snapshots, order
 
 ## Android widgets
 
-Add Bean Budget widgets from the Android launcher's widget picker. Quick add opens a new expense entry, or account creation when the register is empty. Register summary opens the register and resizes between compact and wide layouts. Both use the same bean color tokens as the app. The register and entry screens keep their existing layout.
+Add Bean Budget widgets from the Android launcher's widget picker. Quick add opens a new expense entry, or account creation when the register is empty. Register summary opens the register and resizes between compact and wide layouts. Spending demo and Spending demo wide reproduce Spend Bean's TODAY/WEEK segmented-bar layouts with fixed demo values and a visible DEMO label. The plus-only quick-add tile and all summaries use the app's bean color tokens. The register and entry screens keep their existing layout.
 
 The summary shows posted and projected balances separately for each currency across local accounts. It never combines JPY and USD or presents a ledger balance as a spending allowance. Bank-pending entries affect projected balances. Waiting and failed operation counts describe synchronization separately.
 

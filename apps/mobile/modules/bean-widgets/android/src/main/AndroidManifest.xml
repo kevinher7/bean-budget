@@ -1,5 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
+    <receiver android:name=".SpendingWidgetProvider" android:exported="false" android:label="@string/bean_widget_spending_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/bean_spending_square" />
+    </receiver>
+    <receiver android:name=".SpendingWideWidgetProvider" android:exported="false" android:label="@string/bean_widget_spending_wide_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/bean_spending_wide" />
+    </receiver>
     <receiver android:name=".RegisterWidgetProvider" android:exported="false" android:label="@string/bean_widget_register_name">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

@@ -1,9 +1,14 @@
 <resources>
+  <string name="bean_widget_spending_name">Spending · Demo</string>
+  <string name="bean_widget_spending_wide_name">Spending wide · Demo</string>
+  <string name="bean_widget_spending_description">Demo spending with fixed example values. Not connected to your ledger or budget.</string>
+  <string name="bean_widget_demo">DEMO</string>
+  <string name="bean_widget_today">TODAY</string>
+  <string name="bean_widget_week">WEEK</string>
   <string name="bean_widget_register_name">Bean balances</string>
   <string name="bean_widget_add_name">Add transaction</string>
   <string name="bean_widget_register_description">Posted and projected local balances, separated by currency.</string>
   <string name="bean_widget_add_description">Open Bean Budget to add a transaction.</string>
   <string name="bean_widget_scope">ALL ACCOUNTS</string>
-  <string name="bean_widget_add">Add entry</string>
   <string name="bean_widget_plus">+</string>
 </resources>

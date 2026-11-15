@@ -37,6 +37,7 @@ object BeanWidgets {
   @Synchronized
   fun refresh(context: Context) {
     val manager = AppWidgetManager.getInstance(context)
+    updateSpendingWidgets(context, manager)
     val registerIds = manager.getAppWidgetIds(ComponentName(context, RegisterWidgetProvider::class.java))
     if (registerIds.isNotEmpty()) {
       val result = runCatching { readSummary(context) }
@@ -189,7 +190,7 @@ object BeanWidgets {
     context.resources.getIdentifier("bean_widget_$name", "color", context.packageName)
   )
 
-  private fun openApp(context: Context, destination: String): PendingIntent {
+  fun openApp(context: Context, destination: String): PendingIntent {
     val scheme = when (context.packageName) {
       "app.beanbudget.dev" -> "bean-budget-dev"
       "app.beanbudget.probe" -> "bean-budget-probe"

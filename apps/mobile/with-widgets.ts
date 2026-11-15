@@ -15,6 +15,7 @@ export const withWidgets: ConfigPlugin = (config) =>
         "secondary",
         "outline",
         "primary",
+        "selected",
         "onPrimary",
         "error",
       ] as const;

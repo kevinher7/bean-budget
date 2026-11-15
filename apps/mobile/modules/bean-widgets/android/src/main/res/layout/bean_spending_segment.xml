@@ -1,0 +1,6 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/bean_spending_segment"
+  android:layout_width="0dp"
+  android:layout_height="match_parent"
+  android:layout_weight="1"
+  android:background="@drawable/bean_spending_segment_outline" />
