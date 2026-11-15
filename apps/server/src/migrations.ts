@@ -4,6 +4,7 @@ import { SqlClient } from "effect/sql/SqlClient";
 import initial, { definitions } from "../migrations/001_initial_ledger.ts";
 
 import tracking from "../migrations/002_tracking.ts";
+import mobilePlanning from "../migrations/004_mobile_planning.ts";
 import relationalBudget from "../migrations/003_relational_budget.ts";
 
 // Append immutable migration modules here. This list defines supported journal entries.
@@ -11,6 +12,7 @@ const registry = [
   { id: 1, name: "initial_ledger", effect: initial },
   { id: 2, name: "tracking", effect: tracking },
   { id: 3, name: "relational_budget", effect: relationalBudget },
+  { id: 4, name: "mobile_planning", effect: mobilePlanning },
 ];
 
 const incompatible = () =>
@@ -23,7 +25,7 @@ const incompatible = () =>
 const normalize = (sql: string) =>
   sql.replace(/'(?:''|[^'])*'|\s+/g, (token) => (token.startsWith("'") ? token : ""));
 
-export const migrate = Effect.gen(function* () {
+export const migrateTo = Effect.fn("Migrations.to")(function* (version = 4) {
   const sql = yield* SqlClient;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
@@ -41,7 +43,9 @@ export const migrate = Effect.gen(function* () {
         if (
           journal.some(
             (row, index) =>
-              row.migration_id !== registry[index]?.id || row.name !== registry[index]?.name,
+              row.migration_id > version ||
+              row.migration_id !== registry[index]?.id ||
+              row.name !== registry[index]?.name,
           )
         )
           return yield* Effect.fail(incompatible());
@@ -82,9 +86,13 @@ export const migrate = Effect.gen(function* () {
       }
       return yield* runMigrations({
         loader: Effect.succeed(
-          registry.map(({ id, name, effect }) => [id, name, Effect.succeed(effect)] as const),
+          registry
+            .filter(({ id }) => id <= version)
+            .map(({ id, name, effect }) => [id, name, Effect.succeed(effect)] as const),
         ),
       });
     }),
   );
 });
+
+export const migrate = migrateTo();

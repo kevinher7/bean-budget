@@ -18,6 +18,7 @@ export const readSchedules = Effect.fn("Schedules.read")(function* (id?: string)
         categoryId: Schema.NullOr(Schema.String),
         payeeId: Schema.NullOr(Schema.String),
         active: Schema.Literals([0, 1]),
+        revision: Schema.Int,
       }),
     ),
   )(rows);

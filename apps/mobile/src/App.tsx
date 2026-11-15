@@ -27,10 +27,14 @@ import {
   inspectBackup,
   restoreBackup,
   getServerUrl,
+  savePlanning,
+  recoverPlanning,
+  LocalStorageError,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
 import { pickBackupFile, saveBackupFile } from "./backup.ts";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
+import { BudgetScreen } from "./BudgetScreen.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 
 type Ledger = Effect.Success<ReturnType<typeof loadLedger>>;
@@ -54,9 +58,9 @@ function money(amount: number, currency: "JPY" | "USD") {
 export default function App() {
   const [ledger, setLedger] = useState<Ledger>();
   const [selected, setSelected] = useState("");
-  const [screen, setScreen] = useState<"register" | "entry" | "account" | "connection" | "backup">(
-    "register",
-  );
+  const [screen, setScreen] = useState<
+    "register" | "entry" | "account" | "connection" | "backup" | "budget"
+  >("register");
   const [busy, setBusy] = useState(true);
   const [widgetRoute, setWidgetRoute] = useState<"entry" | "register">();
   const [error, setError] = useState("");
@@ -222,9 +226,11 @@ export default function App() {
                     : "Add transaction"
                   : screen === "account"
                     ? "New account"
-                    : screen === "backup"
-                      ? "Backup"
-                      : "Connection"}
+                    : screen === "budget"
+                      ? "Budget"
+                      : screen === "backup"
+                        ? "Backup"
+                        : "Connection"}
             </Heading>
             {screen !== "register" && (
               <Action
@@ -253,6 +259,11 @@ export default function App() {
           {screen === "register" && (
             <>
               <View style={styles.row}>
+                <TextAction
+                  title="Budget"
+                  disabled={busy || !ledger}
+                  onPress={() => setScreen("budget")}
+                />
                 <TextAction
                   title="New account"
                   disabled={busy || !ledger}
@@ -400,7 +411,14 @@ export default function App() {
                                 onPress={() => run(postTransaction(row.id), setLedger)}
                               />
                             )}
-                          {row.syncStatus === "failed" && (
+                          {row.syncStatus === "failed" && row.planningSyncError && (
+                            <TextAction
+                              title="Review budget change"
+                              disabled={busy}
+                              onPress={() => setScreen("budget")}
+                            />
+                          )}
+                          {row.syncStatus === "failed" && !row.planningSyncError && (
                             <View style={styles.row}>
                               <TextAction
                                 title="Keep local edit"
@@ -436,6 +454,32 @@ export default function App() {
                 )}
               </View>
             </>
+          )}
+          {screen === "budget" && ledger && (
+            <BudgetScreen
+              ledger={ledger}
+              busy={busy}
+              sync={sync}
+              retry={() => run(retryFailed(), setLedger)}
+              createCategory={(name) => run(saveClassification("category", name), setLedger)}
+              save={(build, done) =>
+                run(
+                  Effect.try({
+                    try: build,
+                    catch: (cause) =>
+                      new LocalStorageError({
+                        message: cause instanceof Error ? cause.message : "Check budget fields",
+                        cause,
+                      }),
+                  }).pipe(Effect.flatMap(savePlanning)),
+                  (value) => {
+                    setLedger(value);
+                    done?.();
+                  },
+                )
+              }
+              recover={(id, keep) => run(recoverPlanning(id, keep), setLedger)}
+            />
           )}
           {screen === "account" && (
             <>
@@ -690,7 +734,8 @@ export default function App() {
           {screen === "backup" && (
             <>
               <Label>
-                Mobile backup includes this register and every waiting or failed operation.
+                Mobile backup includes this register, budget plans and every waiting or failed
+                operation.
               </Label>
               <Label muted>
                 Files contain financial data without encryption. Store them privately. Access tokens
@@ -736,8 +781,9 @@ export default function App() {
                     JST
                   </Label>
                   <Label>
-                    Accounts {restore.summary.accounts} · Entries {restore.summary.transactions} ·{" "}
-                    Waiting {restore.summary.pending} · Failed {restore.summary.failed}
+                    Accounts {restore.summary.accounts} · Budgets {restore.summary.budgets} ·
+                    Entries {restore.summary.transactions} · Waiting {restore.summary.pending} ·
+                    Failed {restore.summary.failed}
                   </Label>
                   <Label muted>{restore.summary.serverUrl ?? "Never connected to a server"}</Label>
                   <Label>

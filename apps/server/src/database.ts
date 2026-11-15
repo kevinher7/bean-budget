@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import { layerWebCrypto as secureRandomLayer } from "effect/crypto/SecureRandom";
 import { layer as reactivityLayer } from "effect/reactivity/Reactivity";
 import { SqlClient } from "effect/sql/SqlClient";
-import { migrate } from "./migrations.ts";
+import { migrateTo } from "./migrations.ts";
 
 export class LedgerError extends Error {
   readonly _tag = "LedgerError";
@@ -14,7 +14,7 @@ export class LedgerError extends Error {
   }
 }
 
-export const databaseLayer = (path: string) =>
+export const databaseLayer = (path: string, version = 4) =>
   Layer.merge(
     Layer.effect(
       SqlClient,
@@ -25,7 +25,7 @@ export const databaseLayer = (path: string) =>
           busyTimeout: 5000,
         });
         yield* sql`PRAGMA foreign_keys = ON`;
-        yield* migrate.pipe(Effect.provideService(SqlClient, sql));
+        yield* migrateTo(version).pipe(Effect.provideService(SqlClient, sql));
         return sql;
       }),
     ).pipe(Layer.provide(reactivityLayer)),

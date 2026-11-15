@@ -20,9 +20,11 @@ import { Id, Name } from "@bean-budget/budget";
 import {
   Account,
   Command,
+  CommandReceipt,
   CreateAccount,
   CreateTransaction,
   Transaction,
+  validatePlanning,
   Month,
 } from "@bean-budget/protocol";
 import { databaseLayer } from "./database.ts";
@@ -35,7 +37,7 @@ class BackupError extends Data.TaggedError("BackupError")<{ message: string }> {
 const Manifest = Schema.Struct({
   kind: Schema.Literal("bean-budget-server"),
   version: Schema.Literal(1),
-  schemaVersion: Schema.Literal(3),
+  schemaVersion: Schema.Literals([3, 4]),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   bytes: Schema.Int.check(Schema.isGreaterThan(0)),
 });
@@ -49,6 +51,17 @@ const ReceiptPayload = Schema.Union([
 const validateContent = Effect.gen(function* () {
   const sql = yield* SqlClient;
   const register = yield* registerSnapshot;
+  yield* Effect.try({
+    try: () =>
+      validatePlanning(
+        register.planning,
+        register.accounts,
+        register.categories,
+        register.payees,
+        register.transactions,
+      ),
+    catch: () => new BackupError({ message: "Invalid planning relationships" }),
+  });
   yield* readSchedules();
   yield* readOccurrences();
   yield* Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ month: Month })))(
@@ -149,8 +162,35 @@ const validateContent = Effect.gen(function* () {
         return yield* Effect.fail(
           new BackupError({ message: "Edit receipt does not match its ledger record" }),
         );
-    } else if (receipt.result !== "{}")
-      return yield* Effect.fail(new BackupError({ message: "Unsupported command receipt result" }));
+    } else if (receipt.result !== "{}") {
+      const result = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(CommandReceipt))(
+        receipt.result,
+      );
+      if (
+        payload.type === "generate" &&
+        (!result.occurrenceId ||
+          !register.planning.occurrences.some(
+            (row) =>
+              row.id === result.occurrenceId &&
+              row.scheduleId === payload.scheduleId &&
+              row.month === payload.month,
+          ))
+      )
+        return yield* Effect.fail(
+          new BackupError({ message: "Generation receipt differs from occurrence" }),
+        );
+      if (
+        payload.type === "pendingOccurrence" &&
+        (!result.transactionId ||
+          result.occurrenceId !== payload.occurrenceId ||
+          !register.planning.occurrences.some(
+            (row) => row.id === payload.occurrenceId && row.transactionId === result.transactionId,
+          ))
+      )
+        return yield* Effect.fail(
+          new BackupError({ message: "Payment receipt differs from occurrence" }),
+        );
+    }
   }
 });
 
@@ -162,9 +202,23 @@ function schema(database: DatabaseSync) {
     .all();
 }
 
-async function validateDatabase(path: string, scratch: string) {
+async function validateDatabase(path: string, scratch: string, version?: number) {
+  const source = new DatabaseSync(path, { readOnly: true });
+  try {
+    const actualVersion = source
+      .prepare("SELECT max(migration_id) AS version FROM effect_sql_migrations")
+      .get()?.version;
+    if (
+      (actualVersion !== 3 && actualVersion !== 4) ||
+      (version !== undefined && actualVersion !== version)
+    )
+      throw new BackupError({ message: "Unsupported database version" });
+    version = actualVersion;
+  } finally {
+    source.close();
+  }
   const expectedPath = join(scratch, "expected.sqlite");
-  await Effect.runPromise(Effect.void.pipe(Effect.provide(databaseLayer(expectedPath))));
+  await Effect.runPromise(Effect.void.pipe(Effect.provide(databaseLayer(expectedPath, version))));
   const expected = new DatabaseSync(expectedPath, { readOnly: true });
   let actual: DatabaseSync | undefined;
   try {
@@ -221,7 +275,7 @@ async function verifiedCopy(directory: string, scratch: string) {
     throw new BackupError({ message: "Backup size or SHA-256 does not match its manifest" });
   const path = join(scratch, "verified.sqlite");
   await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-  await validateDatabase(path, scratch);
+  await validateDatabase(path, scratch, manifest.schemaVersion);
   return path;
 }
 
@@ -252,7 +306,7 @@ async function main() {
       const manifest = {
         kind: "bean-budget-server",
         version: 1,
-        schemaVersion: 3,
+        schemaVersion: 4,
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
       };

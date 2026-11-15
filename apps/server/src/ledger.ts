@@ -5,6 +5,7 @@ import { balance, monthStart, summarizePeriods } from "@bean-budget/budget";
 import {
   Account,
   Command,
+  CommandReceipt,
   NamedRecord,
   SummaryQuery,
   CreateAccount,
@@ -13,9 +14,10 @@ import {
   Transactions,
   TransactionQuery,
   RegisterSnapshot,
+  Planning,
 } from "@bean-budget/protocol";
 import { LedgerError } from "./database.ts";
-import { readBudgets, readPeriods } from "./budgets.ts";
+import { readBudgets, readPeriods, readReservations } from "./budgets.ts";
 import { readOccurrences, readSchedules } from "./schedules.ts";
 
 const AccountRows = Schema.Array(
@@ -258,8 +260,19 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
             accepted: true,
             transaction: yield* Schema.decodeUnknownEffect(TransactionJson)(receipt.result),
           };
+        if (receipt.result !== "{}")
+          return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(CommandReceipt))(
+            receipt.result,
+          );
         return { accepted: true };
       }
+      const stale = () =>
+        new LedgerError(
+          409,
+          "Missing or stale planning revision. Upgrade planning clients, synchronize and review this change.",
+        );
+      let occurrenceId: string | undefined;
+      let transactionId: string | undefined;
       switch (input.type) {
         case "category":
         case "payee":
@@ -277,6 +290,8 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
           if (input.value.amount === 0)
             return yield* Effect.fail(new LedgerError(400, "Schedule amount must be nonzero"));
           const previous = (yield* readSchedules(input.value.id))[0];
+          if (input.revision === undefined || input.revision !== (previous?.revision ?? 0))
+            return yield* Effect.fail(stale());
           if (
             previous &&
             (previous.accountId !== input.value.accountId ||
@@ -286,14 +301,15 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
               new LedgerError(400, "Schedule account and direction are immutable"),
             );
           const schedule = input.value;
-          yield* sql`INSERT INTO schedules (id,accountId,amount,day,categoryId,payeeId,active) VALUES (${schedule.id},${schedule.accountId},${schedule.amount},${schedule.day},${schedule.categoryId},${schedule.payeeId},${schedule.active ? 1 : 0}) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, day=excluded.day, categoryId=excluded.categoryId, payeeId=excluded.payeeId, active=excluded.active`;
+          yield* sql`INSERT INTO schedules (id,accountId,amount,day,categoryId,payeeId,active,revision) VALUES (${schedule.id},${schedule.accountId},${schedule.amount},${schedule.day},${schedule.categoryId},${schedule.payeeId},${schedule.active ? 1 : 0},1) ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, day=excluded.day, categoryId=excluded.categoryId, payeeId=excluded.payeeId, active=excluded.active, revision=schedules.revision+1`;
           break;
         }
         case "budget": {
           const value = input.value;
           if (
             !value.accountIds.length ||
-            new Set(value.accountIds).size !== value.accountIds.length
+            new Set(value.accountIds).size !== value.accountIds.length ||
+            new Set(value.reservedScheduleIds).size !== value.reservedScheduleIds.length
           )
             return yield* Effect.fail(new LedgerError(400, "Budget requires distinct accounts"));
           const all = yield* accounts;
@@ -308,7 +324,11 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
               );
           }
           const previous = (yield* readBudgets(value.id))[0];
-          if (previous && JSON.stringify(previous) !== JSON.stringify(value))
+          if (
+            previous &&
+            JSON.stringify({ ...previous, reservationRevision: undefined }) !==
+              JSON.stringify({ ...value, reservationRevision: undefined })
+          )
             return yield* Effect.fail(
               new LedgerError(409, "Budget definition is immutable; create an independent budget"),
             );
@@ -319,10 +339,43 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
             for (const scheduleId of new Set(value.reservedScheduleIds))
               yield* sql`INSERT INTO budget_reserved_schedules VALUES (${value.id},${scheduleId})`;
           }
+          if (!previous)
+            yield* sql`INSERT INTO budget_reservations VALUES (${value.id},${value.firstMonth},${JSON.stringify(value.reservedScheduleIds)})`;
+          break;
+        }
+        case "reservation": {
+          const value = input.value;
+          const budget = (yield* readBudgets(value.budgetId))[0];
+          if (!budget) return yield* Effect.fail(new LedgerError(404, "Unknown budget"));
+          if (input.revision !== budget.reservationRevision) return yield* Effect.fail(stale());
+          if (
+            value.month < budget.firstMonth ||
+            new Set(value.scheduleIds).size !== value.scheduleIds.length
+          )
+            return yield* Effect.fail(new LedgerError(400, "Invalid reservation selection"));
+          for (const id of value.scheduleIds) {
+            const schedule = (yield* readSchedules(id))[0];
+            if (
+              !schedule ||
+              !budget.accountIds.includes(schedule.accountId) ||
+              schedule.amount >= 0
+            )
+              return yield* Effect.fail(
+                new LedgerError(400, "Reserved schedule must be an included expense"),
+              );
+          }
+          yield* sql`INSERT INTO budget_reservations VALUES (${value.budgetId},${value.month},${JSON.stringify(value.scheduleIds)}) ON CONFLICT(budgetId,month) DO UPDATE SET scheduleIds=excluded.scheduleIds`;
+          yield* sql`UPDATE budgets SET reservationRevision=reservationRevision+1 WHERE id=${value.budgetId}`;
           break;
         }
         case "plan": {
-          yield* requireRecord("budget", input.value.budgetId);
+          const budget = (yield* readBudgets(input.value.budgetId))[0];
+          if (!budget) return yield* Effect.fail(new LedgerError(404, "Unknown budget"));
+          if (input.value.month < budget.firstMonth)
+            return yield* Effect.fail(new LedgerError(400, "Month precedes budget"));
+          const previous = (yield* readPeriods(budget.id, input.value.month, input.value.month))[0];
+          if (input.revision === undefined || input.revision !== (previous?.revision ?? 0))
+            return yield* Effect.fail(stale());
           if (
             (input.value.incomeForecast ?? 0) < 0 ||
             Object.values(input.value.allocations).some((n) => n < 0)
@@ -333,7 +386,7 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
           for (const id of Object.keys(input.value.allocations))
             yield* requireRecord("category", id);
           const period = input.value;
-          yield* sql`INSERT INTO budget_periods (budgetId,month,incomeForecast) VALUES (${period.budgetId},${period.month},${period.incomeForecast}) ON CONFLICT(budgetId,month) DO UPDATE SET incomeForecast=excluded.incomeForecast`;
+          yield* sql`INSERT INTO budget_periods (budgetId,month,incomeForecast,revision) VALUES (${period.budgetId},${period.month},${period.incomeForecast},1) ON CONFLICT(budgetId,month) DO UPDATE SET incomeForecast=excluded.incomeForecast, revision=budget_periods.revision+1`;
           yield* sql`DELETE FROM budget_allocations WHERE budgetId=${period.budgetId} AND month=${period.month}`;
           for (const [categoryId, amount] of Object.entries(period.allocations))
             yield* sql`INSERT INTO budget_allocations VALUES (${period.budgetId},${period.month},${categoryId},${amount})`;
@@ -342,12 +395,14 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
         case "generate": {
           const schedule = (yield* readSchedules(input.scheduleId))[0];
           if (!schedule) return yield* Effect.fail(new LedgerError(404, "Unknown schedule"));
-          const id = yield* random.uuidV4();
-          if (
-            !(yield* readOccurrences({ scheduleId: schedule.id })).some(
-              (o) => o.month === input.month,
-            )
-          ) {
+          if (input.revision === undefined || input.revision !== schedule.revision)
+            return yield* Effect.fail(stale());
+          const existing = (yield* readOccurrences({ scheduleId: schedule.id })).find(
+            (o) => o.month === input.month,
+          );
+          const id = existing?.id ?? input.id ?? (yield* random.uuidV4());
+          occurrenceId = id;
+          if (!existing) {
             if (!schedule.active)
               return yield* Effect.fail(new LedgerError(400, "Inactive schedule"));
             yield* sql`INSERT INTO scheduled_occurrences (id,scheduleId,month,accountId,date,amount,categoryId,payeeId,transactionId) VALUES (${id},${schedule.id},${input.month},${schedule.accountId},${monthStart(input.month, schedule.day)},${schedule.amount},${schedule.categoryId},${schedule.payeeId},NULL)`;
@@ -357,26 +412,34 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
         case "pendingOccurrence": {
           const occurrence = (yield* readOccurrences({ id: input.occurrenceId }))[0];
           if (!occurrence) return yield* Effect.fail(new LedgerError(404, "Unknown occurrence"));
+          if (input.revision === undefined || input.revision !== occurrence.revision)
+            return yield* Effect.fail(stale());
           if (occurrence.transactionId)
             return yield* Effect.fail(new LedgerError(409, "Occurrence already linked"));
-          const id = yield* random.uuidV4();
+          const id = input.transactionId ?? (yield* random.uuidV4());
+          occurrenceId = occurrence.id;
+          transactionId = id;
           yield* sql`INSERT INTO transactions (id,accountId,amount,date,kind,status,categoryId,payeeId) VALUES (${id},${occurrence.accountId},${occurrence.amount},${occurrence.date},'transaction','pending',${occurrence.categoryId},${occurrence.payeeId})`;
-          yield* sql`UPDATE scheduled_occurrences SET transactionId=${id} WHERE id=${occurrence.id}`;
+          yield* sql`UPDATE scheduled_occurrences SET transactionId=${id},revision=revision+1 WHERE id=${occurrence.id}`;
           break;
         }
         case "occurrence": {
           const occurrence = (yield* readOccurrences({ id: input.id }))[0];
           if (!occurrence) return yield* Effect.fail(new LedgerError(404, "Unknown occurrence"));
+          if (input.revision === undefined || input.revision !== occurrence.revision)
+            return yield* Effect.fail(stale());
           if (occurrence.transactionId || Math.sign(occurrence.amount) !== Math.sign(input.amount))
             return yield* Effect.fail(
               new LedgerError(400, "Only unmatched same-sign estimates can be changed"),
             );
-          yield* sql`UPDATE scheduled_occurrences SET amount=${input.amount} WHERE id=${occurrence.id}`;
+          yield* sql`UPDATE scheduled_occurrences SET amount=${input.amount},revision=revision+1 WHERE id=${occurrence.id}`;
           break;
         }
         case "match": {
           const occurrence = (yield* readOccurrences({ id: input.occurrenceId }))[0];
           if (!occurrence) return yield* Effect.fail(new LedgerError(404, "Unknown occurrence"));
+          if (input.revision === undefined || input.revision !== occurrence.revision)
+            return yield* Effect.fail(stale());
           const history = yield* readTransactions(occurrence.accountId);
           const transaction = history.find((t) => t.id === input.transactionId);
           if (
@@ -396,7 +459,7 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
             return yield* Effect.fail(
               new LedgerError(409, "Occurrence or transaction already matched"),
             );
-          yield* sql`UPDATE scheduled_occurrences SET transactionId=${transaction.id} WHERE id=${occurrence.id}`;
+          yield* sql`UPDATE scheduled_occurrences SET transactionId=${transaction.id},revision=revision+1 WHERE id=${occurrence.id}`;
           break;
         }
         case "editTransaction": {
@@ -453,8 +516,9 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
         yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},${encoded})`;
         return { accepted: true, transaction };
       }
-      yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},'{}')`;
-      return { accepted: true };
+      const result = { accepted: true, occurrenceId, transactionId };
+      yield* sql`INSERT INTO receipts VALUES (${input.operationId},${payload},${JSON.stringify(result)})`;
+      return result;
     }),
   );
 });
@@ -470,9 +534,14 @@ export const summary = Effect.fn("Ledger.summary")(function* (input: typeof Summ
       const history = (yield* Effect.forEach(budget.accountIds, readTransactions)).flat();
       const occurrences = yield* readOccurrences({ accountIds: budget.accountIds });
       const plans = yield* readPeriods(budget.id, input.month, budget.firstMonth);
+      const reservations = yield* readReservations;
       return yield* Effect.try({
         try: () => {
-          return summarizePeriods(budget, input.month, history, { occurrences, plans });
+          return summarizePeriods(budget, input.month, history, {
+            occurrences,
+            plans,
+            reservations,
+          });
         },
         catch: () => new LedgerError(400, "Summary exceeds supported amounts or date range"),
       });
@@ -480,11 +549,23 @@ export const summary = Effect.fn("Ledger.summary")(function* (input: typeof Summ
   );
 });
 
+export const planningSnapshot = Effect.gen(function* () {
+  const budgets = yield* readBudgets();
+  return yield* Schema.decodeUnknownEffect(Planning)({
+    budgets,
+    schedules: yield* readSchedules(),
+    occurrences: yield* readOccurrences(),
+    reservations: yield* readReservations,
+    periods: (yield* Effect.forEach(budgets, (budget) => readPeriods(budget.id, "9999-12"))).flat(),
+  });
+});
+
 export const registerSnapshot = Effect.gen(function* () {
   const sql = yield* SqlClient;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       return yield* Schema.decodeUnknownEffect(RegisterSnapshot)({
+        planning: yield* planningSnapshot,
         accounts: yield* accounts,
         categories: yield* categories,
         payees: yield* payees,

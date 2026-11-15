@@ -84,6 +84,7 @@ const routes = addRoutes([
       { method: "POST", path: "/budgets", type: "budget" },
       { method: "POST", path: "/schedules", type: "schedule" },
       { method: "PUT", path: "/budgets/:budgetId/periods/:month", type: "plan" },
+      { method: "PUT", path: "/budgets/:budgetId/reservations/:month", type: "reservation" },
       { method: "POST", path: "/schedules/:scheduleId/occurrences", type: "generate" },
       { method: "PUT", path: "/scheduled-occurrences/:id", type: "occurrence" },
       {
@@ -107,9 +108,10 @@ const routes = addRoutes([
         );
         const params = yield* routeParams;
         const value =
-          type === "plan"
+          type === "plan" || type === "reservation"
             ? {
                 operationId: body.operationId,
+                revision: body.revision,
                 value: { ...body, budgetId: params.budgetId, month: params.month },
               }
             : { ...body, ...params };

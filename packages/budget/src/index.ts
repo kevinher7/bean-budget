@@ -124,6 +124,7 @@ export function summarizePeriods(
   }[],
   state: {
     occurrences: readonly BudgetOccurrence[];
+    reservations?: readonly { budgetId: string; month: string; scheduleIds: readonly string[] }[];
     plans: readonly {
       budgetId: string;
       month: string;
@@ -132,6 +133,31 @@ export function summarizePeriods(
     }[];
   },
 ) {
+  const selections = state.reservations
+    ?.filter((r) => r.budgetId === budget.id)
+    .slice()
+    .sort((a, b) => a.month.localeCompare(b.month));
+  const reservedIn = (month: string) =>
+    selections?.filter((r) => r.month <= month).at(-1)?.scheduleIds ?? budget.reservedScheduleIds;
+  const occurrenceMonth = (date: string) => {
+    const calendarMonth = date.slice(0, 7);
+    if (date >= monthStart(calendarMonth, budget.startDay)) return calendarMonth;
+    const previous = new Date(calendarMonth + "-01T00:00:00Z");
+    previous.setUTCMonth(previous.getUTCMonth() - 1);
+    return previous.toISOString().slice(0, 7);
+  };
+  const reservedTransactions = new Set(
+    state.occurrences
+      .filter((o) => {
+        const month = occurrenceMonth(o.date);
+        return (
+          budget.accountIds.includes(o.accountId) &&
+          month >= budget.firstMonth &&
+          reservedIn(month).includes(o.scheduleId)
+        );
+      })
+      .map((o) => o.transactionId),
+  );
   let previousUnassigned = 0;
   let previousRemaining: Record<string, number> = {};
   let result;
@@ -145,7 +171,7 @@ export function summarizePeriods(
     const occurrences = state.occurrences.filter(
       (o) => budget.accountIds.includes(o.accountId) && inPeriod(o.date),
     );
-    const reserved = occurrences.filter((o) => budget.reservedScheduleIds.includes(o.scheduleId));
+    const reserved = occurrences.filter((o) => reservedIn(month).includes(o.scheduleId));
     const effective = (o: BudgetOccurrence) => {
       const actual = ordinary.find((t) => t.id === o.transactionId);
       return actual?.status === "posted" ? actual.amount : o.amount;
@@ -155,11 +181,6 @@ export function summarizePeriods(
     const expectedIncome =
       plan?.incomeForecast ?? balance(occurrences.filter((o) => o.amount > 0).map((o) => o.amount));
     const spendingUnits = new Map<string, bigint>();
-    const reservedTransactions = new Set(
-      state.occurrences
-        .filter((o) => budget.reservedScheduleIds.includes(o.scheduleId))
-        .map((o) => o.transactionId),
-    );
     for (const t of ordinary.filter((t) => inPeriod(t.date) && !reservedTransactions.has(t.id))) {
       if (
         t.amount > 0 &&

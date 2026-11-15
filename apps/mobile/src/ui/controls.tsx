@@ -108,7 +108,7 @@ export function Field({
 
 export function Selection({
   label,
-  emptyLabel,
+  emptyLabel = "Choose",
   value,
   options,
   onChange,
@@ -116,11 +116,11 @@ export function Selection({
   disabled,
 }: {
   label: string;
-  emptyLabel: string;
+  emptyLabel?: string;
   value: string;
   options: ReadonlyArray<{ id: string; name: string }>;
   onChange: (id: string) => void;
-  onAdd: () => void;
+  onAdd?: () => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -139,16 +139,18 @@ export function Selection({
           {options.find((option) => option.id === value)?.name ?? emptyLabel} ▾
         </Text>
       </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Add ${label.toLowerCase()}`}
-        accessibilityState={{ disabled }}
-        disabled={disabled}
-        onPress={onAdd}
-        style={styles.add}
-      >
-        <Text style={styles.plus}>+</Text>
-      </Pressable>
+      {onAdd && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${label.toLowerCase()}`}
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={onAdd}
+          style={styles.add}
+        >
+          <Text style={styles.plus}>+</Text>
+        </Pressable>
+      )}
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalBackground}>
           <View style={styles.modal}>

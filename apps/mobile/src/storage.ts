@@ -4,16 +4,26 @@ import { balance, parseMoney, Currency } from "@bean-budget/budget";
 import {
   Account,
   Command,
+  CommandReceipt,
   CreateAccount,
   CreateTransaction,
   NamedRecord,
   Transaction,
   Transactions,
   RegisterSnapshot,
+  Planning,
+  validatePlanning,
 } from "@bean-budget/protocol";
 import { openDatabaseSync, type SQLiteDatabase } from "expo-sqlite";
 import { refreshWidgets } from "./widgets.ts";
 import { randomUUID } from "expo-crypto";
+import {
+  emptyPlanning,
+  planningKey,
+  planningCommands,
+  projectPlanning,
+  type PlanningCommand,
+} from "./planning.ts";
 import { loadConnection } from "./connection.ts";
 import {
   Operation,
@@ -91,7 +101,7 @@ const initializeDatabase = Effect.try({
       const version = database.getFirstSync<{ user_version: number }>(
         "PRAGMA user_version",
       )?.user_version;
-      if (version === 3 || version === 4) return;
+      if (version === 3 || version === 4 || version === 5) return;
       if (version === 2) {
         database.execSync(
           "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
@@ -156,7 +166,7 @@ const initializeDatabase = Effect.try({
           database.execSync(
             `CREATE TRIGGER IF NOT EXISTS widget_${table}_${action.toLowerCase()} AFTER ${action} ON ${table} BEGIN INSERT INTO metadata(name,value) VALUES('widgetUpdatedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value; END;`,
           );
-      database.execSync("PRAGMA user_version=4;");
+      database.execSync("PRAGMA user_version=5;");
     });
   },
   catch: (cause) => new LocalStorageError({ message: "Could not open local ledger", cause }),
@@ -205,7 +215,9 @@ function readBackup(): MobileBackup {
     throw new Error("Unknown local record kind");
   const value = {
     format: "bean-budget-mobile" as const,
-    version: 1 as const,
+    version: 2 as const,
+    planning: acceptedPlanning(),
+    deferredTransactions: deferredTransactions(),
     createdAt: new Date().toISOString(),
     serverUrl:
       database.getFirstSync<{ value: string }>("SELECT value FROM metadata WHERE name='serverUrl'")
@@ -281,6 +293,14 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
             row.id,
             JSON.stringify(row),
           );
+        database.runSync(
+          "INSERT INTO metadata(name,value) VALUES('planning',?)",
+          JSON.stringify(backup.planning),
+        );
+        database.runSync(
+          "INSERT INTO metadata(name,value) VALUES('deferredTransactions',?)",
+          JSON.stringify(backup.deferredTransactions),
+        );
         for (const row of backup.outbox)
           database.runSync(
             "INSERT INTO outbox(operationId,kind,localId,payload,error) VALUES(?,?,?,?,?)",
@@ -325,12 +345,21 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
                 operation.kind === "account" &&
                 operation.localId === row.accountId),
           );
-          const error = edits.find((operation) => operation.error)?.error;
+          const creation = queued.find(
+            (operation) =>
+              operation.kind === "planning" &&
+              planningCommands([operation]).some(
+                (command) =>
+                  command.type === "pendingOccurrence" && command.transactionId === row.id,
+              ),
+          );
+          const error = edits.find((operation) => operation.error)?.error ?? creation?.error;
           return {
             ...row,
+            planningSyncError: Boolean(creation?.error),
             syncStatus: error
               ? ("failed" as const)
-              : edits.length
+              : edits.length || creation
                 ? ("pending" as const)
                 : ("synced" as const),
             syncError: error ?? undefined,
@@ -345,13 +374,23 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
           projectedBalance: balance(rows.map((row) => row.amount)),
         };
       });
+      const planning = projectPlanning(acceptedPlanning(), planningCommands(queued));
+      const linked = planning.occurrences.flatMap((row) =>
+        row.transactionId ? [row.transactionId] : [],
+      );
       return {
         accounts,
         transactions,
+        planningConflict:
+          new Set(linked).size !== linked.length ||
+          queued.some((row) => row.kind === "planning" && row.error !== null),
         categories: records("categories", NamedRecord),
         payees: records("payees", NamedRecord),
         pending: queued.length,
         failed: queued.filter((row) => row.error).length,
+        planning,
+        deferredTransactions: deferredTransactions(),
+        planningOperations: queued.filter((row) => row.kind === "planning"),
       };
     },
     catch: (cause) => new LocalStorageError({ message: "Could not read local ledger", cause }),
@@ -560,7 +599,61 @@ const request = Effect.fn("registerRequest")(function* (
   return yield* response.json;
 }, Effect.timeout("15 seconds"));
 
+function deferredTransactions() {
+  const row = database.getFirstSync<{ value: string }>(
+    "SELECT value FROM metadata WHERE name='deferredTransactions'",
+  );
+  return row ? Schema.decodeUnknownSync(Schema.fromJsonString(Transactions))(row.value) : [];
+}
+
+function acceptedPlanning() {
+  const row = database.getFirstSync<{ value: string }>(
+    "SELECT value FROM metadata WHERE name='planning'",
+  );
+  return row ? Schema.decodeUnknownSync(Schema.fromJsonString(Planning))(row.value) : emptyPlanning;
+}
+
+function remapOccurrence(from: string, to: string) {
+  if (from === to) return;
+  for (const row of operations().filter((operation) => operation.kind === "planning")) {
+    const command = Schema.decodeUnknownSync(Schema.fromJsonString(Command))(row.payload);
+    const next =
+      command.type === "occurrence" && command.id === from
+        ? { ...command, id: to }
+        : (command.type === "match" || command.type === "pendingOccurrence") &&
+            command.occurrenceId === from
+          ? { ...command, occurrenceId: to }
+          : undefined;
+    if (next)
+      database.runSync(
+        "UPDATE outbox SET localId=?,payload=? WHERE operationId=?",
+        to,
+        JSON.stringify(next),
+        row.operationId,
+      );
+  }
+}
+
 function mergeSnapshot(snapshot: typeof Snapshot.Type) {
+  validatePlanning(
+    snapshot.planning,
+    snapshot.accounts,
+    snapshot.categories,
+    snapshot.payees,
+    snapshot.transactions,
+  );
+  const deferred: (typeof Transaction.Type)[] = [];
+  for (const command of planningCommands(operations())) {
+    if (command.type !== "generate" || !command.id) continue;
+    const existing = snapshot.planning.occurrences.find(
+      (row) => row.scheduleId === command.scheduleId && row.month === command.month,
+    );
+    if (existing) remapOccurrence(command.id, existing.id);
+  }
+  database.runSync(
+    "INSERT INTO metadata(name,value) VALUES('planning',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+    JSON.stringify(snapshot.planning),
+  );
   const queued = operations();
   for (const transaction of snapshot.transactions) {
     // A lost create acknowledgement may already be in this snapshot under its server ID.
@@ -570,7 +663,10 @@ function mergeSnapshot(snapshot: typeof Snapshot.Type) {
         Schema.decodeUnknownSync(Schema.fromJsonString(CreateTransaction))(operation.payload)
           .accountId === transaction.accountId,
     );
-    if (unresolvedCreate) continue;
+    if (unresolvedCreate) {
+      deferred.push(transaction);
+      continue;
+    }
     if (transaction.kind === "opening")
       database.runSync(
         "DELETE FROM records WHERE kind='transactions' AND id=?",
@@ -584,6 +680,10 @@ function mergeSnapshot(snapshot: typeof Snapshot.Type) {
     if (!queued.some((operation) => operation.localId === transaction.id))
       put("transactions", transaction);
   }
+  database.runSync(
+    "INSERT INTO metadata(name,value) VALUES('deferredTransactions',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+    JSON.stringify(deferred),
+  );
   for (const kind of ["accounts", "categories", "payees"] as const) {
     for (const row of snapshot[kind])
       if (!queued.some((operation) => operation.localId === row.id)) put(kind, row);
@@ -625,12 +725,25 @@ export const synchronize = Effect.fn("synchronize")(function* (connection: {
               ? "/payees"
               : operation.kind === "create"
                 ? "/transactions"
-                : `/transactions/${operation.localId}`;
+                : operation.kind === "planning"
+                  ? planningPath(Schema.decodeUnknownSync(Command)(payload))
+                  : `/transactions/${operation.localId}`;
+      const planning = operation.kind === "planning" ? planningCommands([operation])[0] : undefined;
+      const body =
+        planning?.type === "plan" || planning?.type === "reservation"
+          ? { ...planning.value, operationId: planning.operationId, revision: planning.revision }
+          : payload;
       const result = yield* request(
         connection,
-        operation.kind === "edit" ? "PUT" : "POST",
+        operation.kind === "edit" ||
+          (operation.kind === "planning" &&
+            ["plan", "reservation", "occurrence"].includes(
+              Schema.decodeUnknownSync(Command)(payload).type,
+            ))
+          ? "PUT"
+          : "POST",
         path,
-        payload,
+        body,
       ).pipe(Effect.result);
       if (result._tag === "Failure") {
         const rejection = result.failure;
@@ -673,8 +786,21 @@ export const synchronize = Effect.fn("synchronize")(function* (connection: {
           result.success,
         );
       }
+      const planningAccepted =
+        operation.kind === "planning"
+          ? yield* request(connection, "GET", "/register").pipe(
+              Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
+            )
+          : undefined;
       yield* Effect.try(() =>
         database.withTransactionSync(() => {
+          if (planningAccepted) mergeSnapshot(planningAccepted);
+          if (operation.kind === "planning") {
+            const command = Schema.decodeUnknownSync(Command)(payload);
+            const receipt = Schema.decodeUnknownSync(CommandReceipt)(result.success);
+            if (command.type === "generate" && command.id && receipt.occurrenceId)
+              remapOccurrence(command.id, receipt.occurrenceId);
+          }
           if (accepted) {
             const local = records("transactions", Transaction).find(
               (row) => row.id === operation.localId,
@@ -693,6 +819,15 @@ export const synchronize = Effect.fn("synchronize")(function* (connection: {
               accepted.id,
               JSON.stringify(accepted),
             );
+            for (const row of operations().filter((row) => row.kind === "planning")) {
+              const command = Schema.decodeUnknownSync(Schema.fromJsonString(Command))(row.payload);
+              if (command.type === "match" && command.transactionId === operation.localId)
+                database.runSync(
+                  "UPDATE outbox SET payload=? WHERE operationId=?",
+                  JSON.stringify({ ...command, transactionId: accepted.id }),
+                  row.operationId,
+                );
+            }
             for (const row of later) {
               const command = Schema.decodeUnknownSync(Schema.fromJsonString(Command))(row.payload);
               if (command.type !== "editTransaction")
@@ -787,6 +922,244 @@ export const resolveConflict = Effect.fn("resolveConflict")(function* (id: strin
       }),
     catch: (cause) =>
       new LocalStorageError({ message: "Synchronize before resolving this change", cause }),
+  });
+  return yield* loadLedger();
+});
+
+function planningPath(command: typeof Command.Type) {
+  switch (command.type) {
+    case "budget":
+      return "/budgets";
+    case "schedule":
+      return "/schedules";
+    case "plan":
+      return `/budgets/${command.value.budgetId}/periods/${command.value.month}`;
+    case "reservation":
+      return `/budgets/${command.value.budgetId}/reservations/${command.value.month}`;
+    case "generate":
+      return `/schedules/${command.scheduleId}/occurrences`;
+    case "occurrence":
+      return `/scheduled-occurrences/${command.id}`;
+    case "pendingOccurrence":
+      return `/scheduled-occurrences/${command.occurrenceId}/pending-transaction`;
+    case "match":
+      return `/scheduled-occurrences/${command.occurrenceId}/match`;
+    case "category":
+    case "payee":
+    case "editTransaction":
+    case "transfer":
+      throw new Error("Unsupported planning operation");
+  }
+}
+
+export const savePlanning = Effect.fn("savePlanning")(function* (
+  commands: readonly PlanningCommand[],
+) {
+  yield* Effect.try({
+    try: () => {
+      if (syncing) throw new Error("Wait for synchronization to finish");
+      database.withTransactionSync(() => {
+        for (const candidate of commands) {
+          const decoded = Schema.decodeUnknownSync(Command)(candidate);
+          const command = planningCommands([
+            { kind: "planning", payload: JSON.stringify(decoded) },
+          ])[0];
+          if (!command) throw new Error("Invalid planning command");
+          const current = projectPlanning(acceptedPlanning(), planningCommands(operations()));
+          const expected =
+            command.type === "plan"
+              ? (current.periods.find(
+                  (row) =>
+                    row.budgetId === command.value.budgetId && row.month === command.value.month,
+                )?.revision ?? 0)
+              : command.type === "schedule" || command.type === "generate"
+                ? (current.schedules.find(
+                    (row) =>
+                      row.id ===
+                      (command.type === "schedule" ? command.value.id : command.scheduleId),
+                  )?.revision ?? 0)
+                : command.type === "reservation"
+                  ? (current.budgets.find((row) => row.id === command.value.budgetId)
+                      ?.reservationRevision ?? 0)
+                  : command.type !== "budget"
+                    ? current.occurrences.find(
+                        (row) =>
+                          row.id ===
+                          (command.type === "occurrence" ? command.id : command.occurrenceId),
+                      )?.revision
+                    : undefined;
+          if (command.type !== "budget" && command.revision !== expected)
+            throw new Error("This editor is stale. Reopen it before saving.");
+          if (command.type === "schedule") {
+            const previous = current.schedules.find((row) => row.id === command.value.id);
+            if (
+              previous &&
+              (previous.accountId !== command.value.accountId ||
+                Math.sign(previous.amount) !== Math.sign(command.value.amount))
+            )
+              throw new Error("Schedule account and direction are fixed");
+          }
+          if (
+            command.type === "generate" &&
+            !current.schedules.some((row) => row.id === command.scheduleId && row.active)
+          )
+            throw new Error("Choose an active schedule");
+          if (
+            command.type === "occurrence" ||
+            command.type === "pendingOccurrence" ||
+            command.type === "match"
+          ) {
+            const occurrence = current.occurrences.find(
+              (row) =>
+                row.id === (command.type === "occurrence" ? command.id : command.occurrenceId),
+            );
+            if (!occurrence || occurrence.transactionId)
+              throw new Error("Choose an unmatched occurrence");
+            if (
+              command.type === "occurrence" &&
+              Math.sign(command.amount) !== Math.sign(occurrence.amount)
+            )
+              throw new Error("The estimate must keep its direction");
+          }
+          if (command.type === "pendingOccurrence") {
+            const occurrence = current.occurrences.find((row) => row.id === command.occurrenceId);
+            if (!occurrence || !command.transactionId || occurrence.transactionId)
+              throw new Error("Choose an unmatched occurrence");
+            put("transactions", {
+              id: command.transactionId,
+              accountId: occurrence.accountId,
+              amount: occurrence.amount,
+              date: occurrence.date,
+              kind: "transaction",
+              status: "pending",
+              categoryId: occurrence.categoryId,
+              payeeId: occurrence.payeeId,
+              revision: 0,
+            });
+          }
+          const localId =
+            command.type === "budget" || command.type === "schedule"
+              ? command.value.id
+              : command.type === "plan" || command.type === "reservation"
+                ? command.value.budgetId
+                : command.type === "generate"
+                  ? command.id
+                  : command.type === "occurrence"
+                    ? command.id
+                    : command.occurrenceId;
+          if (!localId) throw new Error("Missing planning identity");
+          enqueue("planning", localId, command, command.operationId);
+        }
+        const state = projectPlanning(acceptedPlanning(), planningCommands(operations()));
+        validatePlanning(
+          state,
+          records("accounts", Account),
+          records("categories", NamedRecord),
+          records("payees", NamedRecord),
+          [...records("transactions", Transaction), ...deferredTransactions()],
+        );
+      });
+    },
+    catch: (cause) =>
+      new LocalStorageError({
+        message: cause instanceof Error ? cause.message : "Could not save budget changes",
+        cause,
+      }),
+  });
+  return yield* loadLedger();
+});
+
+export const recoverPlanning = Effect.fn("recoverPlanning")(function* (
+  operationId: string,
+  keepLocal: boolean,
+) {
+  yield* Effect.try({
+    try: () => {
+      if (syncing) throw new Error("Wait for synchronization to finish");
+      database.withTransactionSync(() => {
+        const queued = operations();
+        const operation = queued.find(
+          (row) => row.operationId === operationId && row.kind === "planning",
+        );
+        if (!operation) throw new Error("Planning operation is no longer queued");
+        const command = planningCommands([operation])[0];
+        if (!command) throw new Error("Missing planning operation");
+        const related = queued.filter(
+          (row) =>
+            row.kind === "planning" &&
+            planningCommands([row]).some((value) => planningKey(value) === planningKey(command)),
+        );
+        const server = acceptedPlanning();
+        let revision =
+          command.type === "plan"
+            ? (server.periods.find(
+                (row) =>
+                  row.budgetId === command.value.budgetId && row.month === command.value.month,
+              )?.revision ?? 0)
+            : command.type === "schedule"
+              ? (server.schedules.find((row) => row.id === command.value.id)?.revision ?? 0)
+              : command.type === "reservation"
+                ? (server.budgets.find((row) => row.id === command.value.budgetId)
+                    ?.reservationRevision ?? 0)
+                : command.type === "occurrence"
+                  ? (server.occurrences.find((row) => row.id === command.id)?.revision ?? 0)
+                  : 0;
+        for (const row of related) {
+          const value = planningCommands([row])[0];
+          if (!value) throw new Error("Missing related operation");
+          if (keepLocal) {
+            if (
+              value.type !== "plan" &&
+              value.type !== "schedule" &&
+              value.type !== "reservation" &&
+              value.type !== "occurrence"
+            )
+              throw new Error("Use server, then select the payment or generation again");
+            const next = { ...value, revision: revision++, operationId: randomUUID() };
+            database.runSync(
+              "UPDATE outbox SET operationId=?,payload=?,error=NULL WHERE operationId=?",
+              next.operationId,
+              JSON.stringify(next),
+              row.operationId,
+            );
+          } else {
+            if (value.type === "pendingOccurrence" && value.transactionId) {
+              database.runSync(
+                "DELETE FROM outbox WHERE kind='edit' AND localId=?",
+                value.transactionId,
+              );
+              const accepted = database.getFirstSync<{ payload: string }>(
+                "SELECT payload FROM accepted WHERE id=?",
+                value.transactionId,
+              );
+              if (accepted)
+                put(
+                  "transactions",
+                  Schema.decodeUnknownSync(Schema.fromJsonString(Transaction))(accepted.payload),
+                );
+              else
+                database.runSync(
+                  "DELETE FROM records WHERE kind='transactions' AND id=?",
+                  value.transactionId,
+                );
+            }
+            database.runSync("DELETE FROM outbox WHERE operationId=?", row.operationId);
+          }
+        }
+        validatePlanning(
+          projectPlanning(server, planningCommands(operations())),
+          records("accounts", Account),
+          records("categories", NamedRecord),
+          records("payees", NamedRecord),
+          [...records("transactions", Transaction), ...deferredTransactions()],
+        );
+      });
+    },
+    catch: (cause) =>
+      new LocalStorageError({
+        message: cause instanceof Error ? cause.message : "Could not recover planning change",
+        cause,
+      }),
   });
   return yield* loadLedger();
 });

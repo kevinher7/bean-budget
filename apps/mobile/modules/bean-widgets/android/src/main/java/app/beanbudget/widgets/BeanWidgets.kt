@@ -54,7 +54,7 @@ object BeanWidgets {
     val file = File(context.filesDir, "SQLite/bean-budget.sqlite")
     if (!file.isFile) return RegisterSummary(emptyList(), 0, 0, null, null)
     SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { database ->
-      require(database.version in 3..4) { "Open the app to update local storage" }
+      require(database.version in 3..5) { "Open the app to update local storage" }
       val balances = mutableListOf<CurrencyBalance>()
       var waiting = 0
       var failed = 0

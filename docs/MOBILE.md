@@ -14,7 +14,7 @@ Connection credentials belong in platform secure storage. The connection screen 
 
 The signed Android release bundles JavaScript and starts without Metro. Development builds still use Metro. See [Android release and updates](ANDROID_RELEASE.md) for identity, signing, installation and Obtainium. Database persistence survives force-stop and updates, but uninstalling or clearing app data removes unsynchronized entries.
 
-The Backup screen exports the complete local register, accepted snapshots, ordered outbox operations and original server URL as versioned JSON. Tokens stay in SecureStore. Export writes to a folder selected through Android and verifies the saved bytes. Restore validates the content, shows counts, requires a saved recovery copy and explicit replacement confirmation, then replaces the register in one transaction with verified readback. It rejects a changed register or a different saved server. See [backup and restore](BACKUP.md) for server backups and recovery limits.
+The Backup screen exports the complete local register, planning inputs, accepted snapshots, ordered outbox operations and original server URL as versioned JSON. Tokens stay in SecureStore. Export writes to a folder selected through Android and verifies the saved bytes. Restore validates the content, shows counts, requires a saved recovery copy and explicit replacement confirmation, then replaces the register in one transaction with verified readback. It rejects a changed register or a different saved server. See [backup and restore](BACKUP.md) for server backups and recovery limits.
 
 ## Android widgets
 
@@ -29,3 +29,21 @@ Local records and outbox changes update a committed timestamp through SQLite tri
 Register reads request a widget refresh after initialization, local mutations, conflict recovery, sync and restore. If Android cannot refresh, the app retains the saved register and displays a widget warning. Android also refreshes widgets on provider updates and resizing. Periodic refresh is best effort under Android power restrictions. A widget timestamp describes committed local data, not a promise of background synchronization.
 
 See [Android widgets](WIDGETS.md) for implementation ownership and emulator verification.
+
+## Budget periods and recurring payments
+
+Open Budget from the register. Create recurring income and expense templates, then create a tracking budget with its currency, included accounts, start day, first period and reserved bills. Accounts must use the budget currency. Account scope and period boundaries stay fixed. The first period starts with zero carryover.
+
+The period screen shows expected and posted income separately, commitments, assignable and unassigned funds, category allocations, net spending and remaining funds. Forecasts can use generated income estimates or a manual nonnegative amount. Explicit zero differs from a blank forecast. Pending purchases consume category availability immediately. Positive category entries count as refunds unless linked to scheduled income. Transfers and opening balances do not count as spending.
+
+Recurring templates do not generate payments automatically. The screen lists missing estimates from the first period through the selected period, including both calendar months intersecting a non-calendar period. Review the dates before choosing Generate. A newly added template can therefore generate historical estimates only through that explicit action. Inactive templates do not generate new occurrences. Existing occurrences retain their amounts and dates after template edits.
+
+Unmatched estimates can change amount while keeping their direction. Create a pending payment or select an existing same-account, same-sign ordinary entry as full settlement. Post pending payments in the register. A reserved commitment uses its estimate until its linked payment posts, then uses the actual amount. Partial payments and automatic matching remain unsupported.
+
+Reserved bills can change from a selected period until the next saved selection. Preview unassigned funds and changed category remainders before confirming. Historical selections recalculate carryover. The occurrence's expected period determines reservation, including when its payment settles in another period. Currency, accounts, start day and first period remain fixed.
+
+All planning edits persist with ordered outbox operations. Local summaries use shared calculations over accepted inputs and pending edits. Synchronization uses a complete atomic register snapshot containing planning inputs and ledger history. Revisions protect period replacements, templates, occurrence actions and the reservation timeline. Repeated operations retain their IDs until acknowledgement. Failed replacements can retain local intent against the refreshed server revision or discard the related queued edits. Competing payment matches require a new explicit selection. Discard dependent queued changes first if removing a setup operation would leave references behind.
+
+During unresolved transaction receipt reconciliation, incoming account transactions may remain deferred. The app preserves those snapshot rows in exports and hides affected budget availability until synchronization finishes. It does not calculate carryover from an incomplete ledger. Failed planning operations also hide availability until recovery. Exports retain conflicting provisional payments even when the accepted estimate has changed.
+
+Mobile schema 5 and backup format 2 include planning state, deferred snapshot transactions and planning operations. Format-1 exports still import with empty planning state. Older binaries cannot open schema 5. Export a recovery copy before updating. Native balance widgets accept schema 5; TODAY/WEEK widgets remain DEMO previews.
