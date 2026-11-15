@@ -122,7 +122,7 @@ The backend commits operation receipts and financial mutations in one database t
 
 Clients pull changes after a cursor. Applying an incoming batch and advancing that cursor must be atomic locally. Deletions require tombstones or an equivalent explicit deletion representation. The implemented first mobile slice uses complete register snapshots and has no deletions. Change retention, expired cursors, resnapshot behavior and protocol versioning need a concrete design before adding incremental synchronization.
 
-A stale edit produces an explicit conflict rather than silently overwriting a financial change using device timestamps. The mobile register supports explicit "Keep local edit" and "Use server" recovery for transaction metadata and posting conflicts. Planning replacements still need a conflict policy before offline planning edits. This architecture does not promise automatic merging of concurrent offline edits.
+A stale edit produces an explicit conflict rather than silently overwriting a financial change using device timestamps. The mobile register supports explicit "Keep local edit" and "Use server" recovery for transaction metadata and posting conflicts. Planning replacements, recurring templates and occurrence actions now use revision checks. Budget reservation choices have a revisioned effective-period timeline. This architecture does not promise automatic merging of concurrent offline edits.
 
 The change feed supports replication of current state. It does not commit the project to event sourcing or CRDTs. Ongoing two-way compatibility with Actual's sync protocol is outside the initial design; Actual is a behavioral reference and migration source.
 
@@ -233,3 +233,9 @@ Implement the ledger extensions first, then schedules and occurrence matching, t
 Categories, payees, schedules, scheduled occurrences, budgets, budget account membership, reserved schedules, budget periods, and category allocations use explicit relational tables. Foreign keys enforce references; schedule/month and budget/month/category keys enforce identity. Transactions reference categories and payees. Budget periods are identified by budget/month, without constructed plan IDs.
 
 The server exposes resource routes for these concepts rather than a combined planning-data endpoint or generic command endpoint. Read queries gather the selected budget's inputs; schedules.ts and budgets.ts own their cohesive read queries while ledger.ts coordinates atomic mutations and receipts. See SERVER.md for the route contract. Migration 3 preserves existing JSON records and receipts, verifies their relationships, and removes the former catch-all table atomically. Applied migrations 1 and 2 remain unchanged.
+
+## Mobile period planning
+
+Mobile replicates complete raw planning inputs alongside the ledger in the atomic register snapshot. Resource routes remain the write interface. It derives period availability locally with `summarizePeriods`, including pending ledger and planning operations. Deferred transaction receipts prevent availability display until the ledger is complete.
+
+Budget currency, accounts and period boundaries stay fixed. Reserved schedule selections are effective from a chosen budget period until the next saved selection. Historical edits require a preview and confirmation on mobile. The occurrence's expected period determines reservation; payment date does not move the commitment. Planning edits use revisions and stable operation receipts, with explicit replacement conflict recovery. Mobile exports preserve accepted planning inputs and queued operations.

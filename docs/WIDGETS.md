@@ -29,7 +29,7 @@ The live balance renderer uses Android's SQLite JSON functions and Java time API
 
 Mobile schema 4 adds triggers on local records and outbox changes to record `widgetUpdatedAt` within the financial transaction. Successful synchronization records `lastSyncedAt` with its final snapshot merge. Restore clears the previous sync time and records a new local update time. The widget labels timestamps in Asia/Tokyo and does not imply that an idle app synchronizes in the background. Android's 30-minute provider interval is best effort under power restrictions.
 
-Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Backup format 1 excludes these operational timestamps and remains compatible. Older application binaries reject schema 4; retain a verified mobile export before updating.
+Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Backup formats 1 and 2 exclude these operational timestamps. Format-1 exports remain importable. Schema 5 adds mobile planning and native balance-widget compatibility without changing its ledger query. Older application binaries reject schema 5; retain a verified mobile export before updating.
 
 `apps/mobile/modules/bean-widgets/with-widgets.ts` generates native color resources from `src/ui/theme.ts` during Expo prebuild. Generated Android projects stay ignored. The palette keep rule retains colors selected dynamically under release resource shrinking.
 

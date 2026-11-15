@@ -8,11 +8,15 @@ import {
   CreateTransaction,
   NamedRecord,
   Transaction,
+  Planning,
+  validatePlanning,
 } from "@bean-budget/protocol";
+
+import { emptyPlanning, planningCommands, projectPlanning } from "./planning.ts";
 
 export const Operation = Schema.Struct({
   operationId: Id,
-  kind: Schema.Literals(["account", "category", "payee", "create", "edit"]),
+  kind: Schema.Literals(["account", "category", "payee", "create", "edit", "planning"]),
   localId: Id,
   payload: Schema.String,
   error: Schema.NullOr(Schema.String),
@@ -20,7 +24,9 @@ export const Operation = Schema.Struct({
 
 export const MobileBackup = Schema.Struct({
   format: Schema.Literal("bean-budget-mobile"),
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
+  planning: Planning,
+  deferredTransactions: Schema.Array(Transaction),
   createdAt: Schema.String,
   serverUrl: Schema.NullOr(Schema.String),
   accounts: Schema.Array(Account),
@@ -64,9 +70,22 @@ export function decodeBackup(text: string): MobileBackup {
     bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
     if (bytes > MAX_BACKUP_BYTES) throw new Error("Backup exceeds 20 MB");
   }
-  const backup = Schema.decodeUnknownSync(Schema.fromJsonString(MobileBackup), {
+  const raw: unknown = JSON.parse(text);
+  const normalized =
+    typeof raw === "object" && raw !== null && "version" in raw && raw.version === 1
+      ? { ...raw, version: 2, planning: emptyPlanning, deferredTransactions: [] }
+      : raw;
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "version" in raw &&
+    raw.version === 1 &&
+    ("planning" in raw || "deferredTransactions" in raw)
+  )
+    throw new Error("Unexpected planning fields in legacy backup");
+  const backup = Schema.decodeUnknownSync(MobileBackup, {
     onExcessProperty: "error",
-  })(text);
+  })(normalized);
   if (new Date(backup.createdAt).toISOString() !== backup.createdAt)
     throw new Error("Invalid backup creation date");
   if (backup.serverUrl !== null && normalizeServerUrl(backup.serverUrl) !== backup.serverUrl)
@@ -78,7 +97,7 @@ export function decodeBackup(text: string): MobileBackup {
   uniqueIds(backup.accepted, "accepted transaction");
   if (new Set(backup.outbox.map((row) => row.operationId)).size !== backup.outbox.length)
     throw new Error("Duplicate operation");
-  for (const row of [...backup.transactions, ...backup.accepted]) {
+  for (const row of [...backup.transactions, ...backup.accepted, ...backup.deferredTransactions]) {
     if (
       !accounts.has(row.accountId) ||
       (row.categoryId && !categories.has(row.categoryId)) ||
@@ -107,6 +126,16 @@ export function decodeBackup(text: string): MobileBackup {
     balance(rows.map((row) => row.amount));
     balance(rows.filter((row) => row.status !== "pending").map((row) => row.amount));
   }
+  validatePlanning(backup.planning, backup.accounts, backup.categories, backup.payees, [
+    ...backup.transactions,
+    ...backup.deferredTransactions,
+  ]);
+  uniqueIds(backup.deferredTransactions, "deferred transaction");
+  const plannedPayments = new Set(
+    planningCommands(backup.outbox).flatMap((command) =>
+      command.type === "pendingOccurrence" && command.transactionId ? [command.transactionId] : [],
+    ),
+  );
   const created = new Set<string>();
   const pendingAccounts = new Set(
     backup.outbox.filter((row) => row.kind === "account").map((row) => row.localId),
@@ -185,6 +214,23 @@ export function decodeBackup(text: string): MobileBackup {
         throw new Error("Invalid transaction operation mapping or order");
       checkClassifications(command);
       created.add(operation.localId);
+    } else if (operation.kind === "planning") {
+      const command = planningCommands([operation])[0];
+      if (!command || command.operationId !== operation.operationId)
+        throw new Error("Invalid planning operation identity");
+      const localId =
+        command.type === "budget" || command.type === "schedule"
+          ? command.value.id
+          : command.type === "plan" || command.type === "reservation"
+            ? command.value.budgetId
+            : command.type === "generate" || command.type === "occurrence"
+              ? command.id
+              : command.occurrenceId;
+      if (localId !== operation.localId) throw new Error("Invalid planning operation mapping");
+      if (command.type === "pendingOccurrence") {
+        if (!command.transactionId) throw new Error("Missing provisional payment");
+        created.add(command.transactionId);
+      }
     } else {
       const command = Schema.decodeUnknownSync(Schema.fromJsonString(Command), {
         onExcessProperty: "error",
@@ -198,6 +244,7 @@ export function decodeBackup(text: string): MobileBackup {
         !local ||
         local.kind !== "transaction" ||
         local.transferId ||
+        (plannedPayments.has(operation.localId) && !created.has(operation.localId)) ||
         (backup.outbox.some((row) => row.kind === "create" && row.localId === operation.localId) &&
           !created.has(operation.localId))
       )
@@ -205,12 +252,43 @@ export function decodeBackup(text: string): MobileBackup {
       checkClassifications(command);
     }
   }
+  const commands = planningCommands(backup.outbox);
+  const projected = projectPlanning(backup.planning, commands);
+  validatePlanning(
+    projected,
+    backup.accounts,
+    backup.categories,
+    backup.payees,
+    [...backup.transactions, ...backup.deferredTransactions],
+    backup.outbox.some(
+      (row) =>
+        row.kind === "planning" &&
+        row.error !== null &&
+        planningCommands([row])[0]?.type === "match",
+    ),
+  );
+  for (const command of commands) {
+    if (command.type !== "pendingOccurrence") continue;
+    const occurrence = projected.occurrences.find((row) => row.id === command.occurrenceId);
+    const local = backup.transactions.find((row) => row.id === command.transactionId);
+    if (
+      !occurrence ||
+      !local ||
+      local.accountId !== occurrence.accountId ||
+      ((local.amount !== occurrence.amount || local.date !== occurrence.date) &&
+        !backup.outbox.some((row) => row.kind === "planning" && row.error !== null))
+    )
+      throw new Error("Queued payment differs from its occurrence");
+  }
   for (const local of backup.transactions) {
     const creation = backup.outbox.find((row) => row.kind === "create" && row.localId === local.id);
     const accepted = backup.accepted.find((row) => row.id === local.id);
     if (creation && accepted)
       throw new Error("Accepted transaction cannot also have a queued creation");
-    if (local.kind === "transaction" && !creation && !accepted)
+    const pendingPayment = commands.some(
+      (command) => command.type === "pendingOccurrence" && command.transactionId === local.id,
+    );
+    if (local.kind === "transaction" && !creation && !accepted && !pendingPayment)
       throw new Error("Transaction has neither an accepted record nor a queued creation");
     const edits = backup.outbox.filter((row) => row.kind === "edit" && row.localId === local.id);
     let previousRevision: number | undefined;
@@ -254,6 +332,9 @@ export function decodeBackup(text: string): MobileBackup {
   if (
     backup.serverUrl === null &&
     (backup.accepted.length > 0 ||
+      backup.planning.budgets.length > 0 ||
+      backup.planning.schedules.length > 0 ||
+      backup.deferredTransactions.length > 0 ||
       backup.transactions.some(
         (row) =>
           (row.revision ?? 0) > 0 &&
@@ -274,6 +355,7 @@ export function backupSummary(backup: MobileBackup) {
     serverUrl: backup.serverUrl,
     accounts: backup.accounts.length,
     transactions: backup.transactions.length,
+    budgets: projectPlanning(backup.planning, planningCommands(backup.outbox)).budgets.length,
     pending: backup.outbox.length,
     failed: backup.outbox.filter((row) => row.error !== null).length,
   };

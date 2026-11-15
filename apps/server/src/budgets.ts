@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
-import { Budget, BudgetPeriod } from "@bean-budget/protocol";
+import { Budget, BudgetPeriod, Reservation } from "@bean-budget/protocol";
 
 export const readBudgets = Effect.fn("Budgets.read")(function* (id?: string) {
   const sql = yield* SqlClient;
@@ -12,6 +12,7 @@ export const readBudgets = Effect.fn("Budgets.read")(function* (id?: string) {
         currency: Schema.String,
         startDay: Schema.Int,
         firstMonth: Schema.String,
+        reservationRevision: Schema.Int,
       }),
     ),
   )(
@@ -52,6 +53,7 @@ export const readPeriods = Effect.fn("Budgets.readPeriods")(function* (
             budgetId: Schema.String,
             month: Schema.String,
             incomeForecast: Schema.NullOr(Schema.Number),
+            revision: Schema.Int,
           }),
         ),
       )(
@@ -72,4 +74,16 @@ export const readPeriods = Effect.fn("Budgets.readPeriods")(function* (
       );
     }),
   );
+});
+
+export const readReservations = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  return yield* Schema.decodeUnknownEffect(
+    Schema.Array(
+      Schema.Struct({
+        ...Reservation.fields,
+        scheduleIds: Schema.fromJsonString(Reservation.fields.scheduleIds),
+      }),
+    ),
+  )(yield* sql`SELECT * FROM budget_reservations ORDER BY budgetId,month`);
 });

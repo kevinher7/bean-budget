@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Currency, FinancialDate, Id, Money, Name } from "@bean-budget/budget";
+import { balance, Currency, FinancialDate, Id, Money, Name } from "@bean-budget/budget";
 
 export const CreateAccount = Schema.Struct({
   operationId: Schema.optional(Id),
@@ -58,6 +58,8 @@ export const Month = Schema.String.check(Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2]
 
 export const NamedRecord = Schema.Struct({ id: Id, name: Name });
 
+export const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
 export const Budget = Schema.Struct({
   id: Id,
   name: Name,
@@ -66,6 +68,7 @@ export const Budget = Schema.Struct({
   startDay: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 })),
   firstMonth: Month,
   reservedScheduleIds: Schema.Array(Id),
+  reservationRevision: Schema.optional(Revision),
 });
 
 export const Schedule = Schema.Struct({
@@ -76,6 +79,7 @@ export const Schedule = Schema.Struct({
   categoryId: Schema.NullOr(Id),
   payeeId: Schema.NullOr(Id),
   active: Schema.Boolean,
+  revision: Schema.optional(Revision),
 });
 
 export const Occurrence = Schema.Struct({
@@ -88,6 +92,7 @@ export const Occurrence = Schema.Struct({
   categoryId: Schema.NullOr(Id),
   payeeId: Schema.NullOr(Id),
   transactionId: Schema.NullOr(Id),
+  revision: Schema.optional(Revision),
 });
 
 export const BudgetPeriod = Schema.Struct({
@@ -95,25 +100,71 @@ export const BudgetPeriod = Schema.Struct({
   month: Month,
   allocations: Schema.Record(Id, Money),
   incomeForecast: Schema.NullOr(Money),
+  revision: Schema.optional(Revision),
+});
+
+export const Reservation = Schema.Struct({
+  budgetId: Id,
+  month: Month,
+  scheduleIds: Schema.Array(Id),
+});
+
+export const Planning = Schema.Struct({
+  budgets: Schema.Array(Budget),
+  schedules: Schema.Array(Schedule),
+  occurrences: Schema.Array(Occurrence),
+  periods: Schema.Array(BudgetPeriod),
+  reservations: Schema.Array(Reservation),
 });
 
 export const Command = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("pendingOccurrence"), operationId: Id, occurrenceId: Id }),
+  Schema.Struct({
+    type: Schema.Literal("pendingOccurrence"),
+    operationId: Id,
+    occurrenceId: Id,
+    revision: Schema.optional(Revision),
+    transactionId: Schema.optional(Id),
+  }),
   Schema.Struct({ type: Schema.Literal("category"), operationId: Id, value: NamedRecord }),
   Schema.Struct({ type: Schema.Literal("payee"), operationId: Id, value: NamedRecord }),
   Schema.Struct({ type: Schema.Literal("budget"), operationId: Id, value: Budget }),
-  Schema.Struct({ type: Schema.Literal("schedule"), operationId: Id, value: Schedule }),
-  Schema.Struct({ type: Schema.Literal("plan"), operationId: Id, value: BudgetPeriod }),
+  Schema.Struct({
+    type: Schema.Literal("schedule"),
+    operationId: Id,
+    revision: Schema.optional(Revision),
+    value: Schedule,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("plan"),
+    operationId: Id,
+    revision: Schema.optional(Revision),
+    value: BudgetPeriod,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("reservation"),
+    operationId: Id,
+    revision: Revision,
+    value: Reservation,
+  }),
   Schema.Struct({
     type: Schema.Literal("generate"),
     operationId: Id,
     scheduleId: Id,
     month: Month,
+    revision: Schema.optional(Revision),
+    id: Schema.optional(Id),
   }),
-  Schema.Struct({ type: Schema.Literal("occurrence"), operationId: Id, id: Id, amount: Money }),
+  Schema.Struct({
+    type: Schema.Literal("occurrence"),
+    operationId: Id,
+    id: Id,
+    amount: Money,
+    revision: Schema.optional(Revision),
+  }),
   Schema.Struct({
     type: Schema.Literal("match"),
     operationId: Id,
+    revision: Schema.optional(Revision),
     occurrenceId: Id,
     transactionId: Id,
   }),
@@ -138,6 +189,12 @@ export const Command = Schema.Union([
   }),
 ]);
 
+export const CommandReceipt = Schema.Struct({
+  accepted: Schema.Literal(true),
+  occurrenceId: Schema.optional(Id),
+  transactionId: Schema.optional(Id),
+});
+
 export const SummaryQuery = Schema.Struct({ budgetId: Id, month: Month });
 
 export const RegisterSnapshot = Schema.Struct({
@@ -145,4 +202,109 @@ export const RegisterSnapshot = Schema.Struct({
   categories: Schema.Array(NamedRecord),
   payees: Schema.Array(NamedRecord),
   transactions: Transactions,
+  planning: Planning,
 });
+
+// Failed offline matches can compete for one payment. Exports preserve that intent; accepted snapshots remain strict.
+export function validatePlanning(
+  state: typeof Planning.Type,
+  accounts: readonly (typeof Account.Type)[],
+  categories: readonly (typeof NamedRecord.Type)[],
+  payees: readonly (typeof NamedRecord.Type)[],
+  transactions: readonly (typeof Transaction.Type)[],
+  allowConflictingMatches = false,
+) {
+  for (const rows of [state.budgets, state.schedules, state.occurrences])
+    if (new Set(rows.map((row) => row.id)).size !== rows.length)
+      throw new Error("Duplicate planning identity");
+  for (const rows of [state.periods, state.reservations])
+    if (new Set(rows.map((row) => row.budgetId + "/" + row.month)).size !== rows.length)
+      throw new Error("Duplicate budget period");
+  for (const schedule of state.schedules) {
+    if (
+      !accounts.some((row) => row.id === schedule.accountId) ||
+      schedule.amount === 0 ||
+      (schedule.categoryId && !categories.some((row) => row.id === schedule.categoryId)) ||
+      (schedule.payeeId && !payees.some((row) => row.id === schedule.payeeId))
+    )
+      throw new Error("Invalid schedule reference or amount");
+  }
+  for (const budget of state.budgets) {
+    if (
+      new Set(budget.reservedScheduleIds).size !== budget.reservedScheduleIds.length ||
+      !budget.reservedScheduleIds.every((id) =>
+        state.schedules.some(
+          (row) => row.id === id && row.amount < 0 && budget.accountIds.includes(row.accountId),
+        ),
+      )
+    )
+      throw new Error("Invalid initial reserved bills");
+    if (
+      !budget.accountIds.length ||
+      new Set(budget.accountIds).size !== budget.accountIds.length ||
+      !budget.accountIds.every((id) =>
+        accounts.some((row) => row.id === id && row.currency === budget.currency),
+      )
+    )
+      throw new Error("Invalid budget accounts");
+    if (
+      !state.reservations.some(
+        (row) => row.budgetId === budget.id && row.month === budget.firstMonth,
+      )
+    )
+      throw new Error("Missing initial bill selection");
+  }
+  for (const reservation of state.reservations) {
+    const budget = state.budgets.find((row) => row.id === reservation.budgetId);
+    if (
+      !budget ||
+      reservation.month < budget.firstMonth ||
+      new Set(reservation.scheduleIds).size !== reservation.scheduleIds.length ||
+      !reservation.scheduleIds.every((id) =>
+        state.schedules.some(
+          (row) => row.id === id && row.amount < 0 && budget.accountIds.includes(row.accountId),
+        ),
+      )
+    )
+      throw new Error("Invalid reserved bill selection");
+  }
+  const linked = new Set<string>();
+  const generated = new Set<string>();
+  for (const occurrence of state.occurrences) {
+    const schedule = state.schedules.find((row) => row.id === occurrence.scheduleId);
+    const key = occurrence.scheduleId + "/" + occurrence.month;
+    const transaction = transactions.find((row) => row.id === occurrence.transactionId);
+    if (
+      !schedule ||
+      generated.has(key) ||
+      occurrence.accountId !== schedule.accountId ||
+      occurrence.date.slice(0, 7) !== occurrence.month ||
+      Math.sign(occurrence.amount) !== Math.sign(schedule.amount) ||
+      (occurrence.categoryId && !categories.some((row) => row.id === occurrence.categoryId)) ||
+      (occurrence.payeeId && !payees.some((row) => row.id === occurrence.payeeId)) ||
+      (occurrence.transactionId &&
+        (!transaction ||
+          (!allowConflictingMatches && linked.has(occurrence.transactionId)) ||
+          transaction.kind !== "transaction" ||
+          transaction.transferId ||
+          transaction.accountId !== occurrence.accountId ||
+          Math.sign(transaction.amount) !== Math.sign(occurrence.amount)))
+    )
+      throw new Error("Invalid occurrence or payment match");
+    generated.add(key);
+    if (occurrence.transactionId) linked.add(occurrence.transactionId);
+  }
+  for (const period of state.periods) {
+    const budget = state.budgets.find((row) => row.id === period.budgetId);
+    if (
+      !budget ||
+      period.month < budget.firstMonth ||
+      (period.incomeForecast ?? 0) < 0 ||
+      !Object.entries(period.allocations).every(
+        ([id, amount]) => amount >= 0 && categories.some((row) => row.id === id),
+      )
+    )
+      throw new Error("Invalid forecast or allocation");
+    balance(Object.values(period.allocations));
+  }
+}
