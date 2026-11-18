@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { layer as nodeHttpServerLayer } from "@effect/platform-node/NodeHttpServer";
+import { make as makeNodeHttpServer } from "@effect/platform-node/NodeHttpServer";
 import { ByteSize, Effect, Schema } from "effect";
 import { MaxBodySize } from "effect/http/HttpIncomingMessage";
 import {
@@ -9,7 +9,6 @@ import {
   toHttpEffect,
   params as routeParams,
 } from "effect/http/HttpRouter";
-import { serveEffect } from "effect/http/HttpServer";
 import { isHttpServerError } from "effect/http/HttpServerError";
 import {
   HttpServerRequest,
@@ -273,7 +272,7 @@ function authorized(header: string | undefined, token: string): boolean {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export const startServer = Effect.fn("Http.serve")(function* (config: {
+export const listenServer = Effect.fn("Http.listen")(function* (config: {
   token: string;
   host?: string;
   port?: number;
@@ -343,14 +342,14 @@ export const startServer = Effect.fn("Http.serve")(function* (config: {
     }),
   );
 
-  return yield* serveEffect(app).pipe(
-    Effect.andThen(Effect.never),
-    Effect.scoped,
-    Effect.provide(
-      nodeHttpServerLayer(createServer, {
-        host: config.host ?? "127.0.0.1",
-        port: config.port ?? 3000,
-      }),
-    ),
-  );
+  const server = yield* makeNodeHttpServer(createServer, {
+    host: config.host ?? "127.0.0.1",
+    port: config.port ?? 3000,
+  });
+  yield* server.serve(app);
+  return server.address;
 });
+
+export function startServer(config: { token: string; host?: string; port?: number }) {
+  return listenServer(config).pipe(Effect.andThen(Effect.never), Effect.scoped);
+}
