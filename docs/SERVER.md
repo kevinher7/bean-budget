@@ -166,7 +166,7 @@ Set `BEAN_MAIL_ENABLED=true` and pass the following backend settings through you
 
 - `BEAN_GMAIL_CLIENT_ID`, `BEAN_GMAIL_CLIENT_SECRET` and `BEAN_GMAIL_REFRESH_TOKEN`.
 - `BEAN_MAIL_CONFIG` is a JSON object. Set a stable `connectionId` for the mailbox and keep it when rotating credentials. Set `cutover` to the desired first Gmail receipt date in Asia/Tokyo, in YYYY-MM-DD format. Set `accounts` to a mapping of `smbc` and/or `yucho` to existing JPY account IDs.
-- `status` defaults to `pending`. Set it to `posted` only if these notifications should affect posted balances immediately.
+- `status` defaults to `posted`. Accepted debit notices affect the posted balance immediately. Set `status` to `pending` to require a separate posting action.
 - `merchants` is optional. Each entry has `merchant` and optional `categoryId`, `payeeId` and `transfer`. Matching uses the exact merchant after Unicode normalization, whitespace folding and case folding. Unknown merchants can enter the register without a category or payee. Mark known transfer merchants with `transfer: true` to hold their notices for review.
 
 The first run searches all matching mail at or after the cutover, then drains Gmail history from a baseline captured before the search. Later runs read history pages. If Gmail expires the history cursor, the server repeats the cutover search and deduplicates previously discovered messages. The issuer's transaction date stays separate from Gmail receipt time.

@@ -226,7 +226,7 @@ export const runMailIngestion = Effect.fn("Mail.ingest")(function* (
       date: parsed.date,
       categoryId: mapping?.categoryId,
       payeeId: mapping?.payeeId,
-      status: config.status ?? "pending",
+      status: config.status ?? "posted",
       source: "mail-bean",
       importIdentity: { namespace: `gmail:${connectionId}`, key: messageId },
     });
