@@ -335,3 +335,57 @@ export const MailStatus = Schema.Struct({
     }),
   ),
 });
+
+const MailMessageKey = Schema.Struct({
+  connectionId: Id,
+  messageId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+
+export const MailReviewAction = Schema.Union([
+  Schema.Struct({ operationId: Id, message: MailMessageKey, action: Schema.Literal("ignore") }),
+  Schema.Struct({ operationId: Id, message: MailMessageKey, action: Schema.Literal("import") }),
+  Schema.Struct({
+    operationId: Id,
+    message: MailMessageKey,
+    action: Schema.Literal("link"),
+    transactionId: Id,
+    revision: Schema.Int,
+    status: Schema.Literals(["posted", "pending"]),
+  }),
+  Schema.Struct({
+    operationId: Id,
+    message: MailMessageKey,
+    action: Schema.Literal("transfer"),
+    toAccountId: Id,
+    incoming: Money,
+  }),
+  Schema.Struct({
+    operationId: Id,
+    message: MailMessageKey,
+    action: Schema.Literal("linkTransfer"),
+    transactionId: Id,
+  }),
+]);
+
+export const MailReviewResult = Schema.Struct({ transactionId: Schema.NullOr(Id) });
+
+export const MailReviewQueue = Schema.Array(
+  Schema.Struct({
+    connectionId: Id,
+    messageId: Schema.String,
+    reason: Schema.NullOr(Schema.String),
+    notice: Schema.NullOr(
+      Schema.Struct({
+        issuer: Schema.Literals(["smbc", "yucho"]),
+        merchant: Name,
+        approval: Schema.String,
+        date: FinancialDate,
+        time: Schema.String,
+        amount: Money,
+        currency: Schema.Literal("JPY"),
+      }),
+    ),
+    purchase: Schema.NullOr(CreateTransaction),
+    candidates: Schema.Array(Transaction),
+  }),
+);

@@ -500,6 +500,7 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
             [to.id, input.incoming],
           ] as const) {
             const id = yield* random.uuidV4();
+            if (accountId === from.id) transactionId = id;
             yield* sql`INSERT INTO transactions (id,accountId,amount,date,kind,transferId) VALUES (${id},${accountId},${amount},${input.date},'transaction',${transferId})`;
           }
           break;

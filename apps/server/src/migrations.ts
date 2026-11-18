@@ -8,6 +8,8 @@ import mailIngestion from "../migrations/005_mail_ingestion.ts";
 import mobilePlanning from "../migrations/004_mobile_planning.ts";
 import relationalBudget from "../migrations/003_relational_budget.ts";
 
+import mailReview from "../migrations/006_mail_review.ts";
+
 // Append immutable migration modules here. This list defines supported journal entries.
 const registry = [
   { id: 1, name: "initial_ledger", effect: initial },
@@ -15,6 +17,7 @@ const registry = [
   { id: 3, name: "relational_budget", effect: relationalBudget },
   { id: 4, name: "mobile_planning", effect: mobilePlanning },
   { id: 5, name: "mail_ingestion", effect: mailIngestion },
+  { id: 6, name: "mail_review", effect: mailReview },
 ];
 
 const incompatible = () =>
@@ -27,7 +30,7 @@ const incompatible = () =>
 const normalize = (sql: string) =>
   sql.replace(/'(?:''|[^'])*'|\s+/g, (token) => (token.startsWith("'") ? token : ""));
 
-export const migrateTo = Effect.fn("Migrations.to")(function* (version = 5) {
+export const migrateTo = Effect.fn("Migrations.to")(function* (version = 6) {
   const sql = yield* SqlClient;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
