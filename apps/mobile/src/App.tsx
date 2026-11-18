@@ -69,6 +69,7 @@ export default function App() {
   const [syncRequest, setSyncRequest] = useState<"automatic" | "manual">();
   const [widgetRoute, setWidgetRoute] = useState<"entry" | "register">();
   const [error, setError] = useState("");
+  const [syncError, setSyncError] = useState("");
   const [message, setMessage] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today);
@@ -151,6 +152,7 @@ export default function App() {
       synchronize(connection),
       (value) => {
         setLedger(value);
+        setSyncError("");
         if (syncRequest === "manual") setMessage("Synchronization finished.");
       },
       syncRequest === "automatic",
@@ -210,6 +212,8 @@ export default function App() {
       setMessage("");
     }
 
+    const reportError = automatic ? setSyncError : setError;
+
     function finish() {
       operationInProgress.current = false;
       setBusy(false);
@@ -227,9 +231,9 @@ export default function App() {
             "message" in failure &&
             typeof failure.message === "string"
           )
-            setError(failure.message);
+            reportError(failure.message);
           else
-            setError(
+            reportError(
               "Could not complete this action. Check the fields and connection, then retry. Your entry is retained.",
             );
           return failure;
@@ -299,9 +303,9 @@ export default function App() {
               />
             )}
           </View>
-          {error !== "" && (
+          {(error || syncError) !== "" && (
             <Text accessibilityRole="alert" style={styles.error}>
-              {error}
+              {error || syncError}
             </Text>
           )}
           {message !== "" && <Label>{message}</Label>}
