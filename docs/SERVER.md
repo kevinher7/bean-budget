@@ -182,3 +182,40 @@ path strips forged Gmail Authentication-Results headers. With that setting,
 automatic acceptance requires a single `mx.google.com` result reporting
 `dmarc=pass` for the issuer's exact From domain. Missing, failed, or ambiguous
 authentication leaves the notice in review. See [RFC 8601](https://www.rfc-editor.org/rfc/rfc8601.html).
+
+## Mail review
+
+Use the server bearer token for both requests.
+
+- `GET /mail/review` lists up to 100 messages awaiting review. Each mapped notice
+  includes same-account, same-amount and same-day candidate transactions.
+  Compare the candidates with the bank notice before choosing an action. A
+  link can explicitly select a transaction from another date by ID. Use this
+  for a known date difference between the notice and the register entry.
+- `POST /mail/review` accepts JSON. Reuse the same operation ID and exact
+  action when retrying after a lost response. Use a new operation ID for a
+  different decision.
+
+```json
+{
+  "operationId": "operator-review-001",
+  "message": { "connectionId": "personal", "messageId": "synthetic123" },
+  "action": "link",
+  "transactionId": "selected-transaction-id",
+  "revision": 0,
+  "status": "pending"
+}
+```
+
+`link` uses the selected manual transaction's current revision and status.
+It preserves its date, category, payee, notes and posting state. Scheduled
+payments use their existing occurrence workflow. `import` accepts the frozen
+purchase as its own transaction. `ignore` records the decision without a
+ledger write. These last two actions require only the operation and message IDs.
+
+For a transfer, use `transfer` with `toAccountId` and the actual positive
+`incoming` amount in destination minor units. The notice supplies the
+outgoing account, amount and date. Both legs post together. Same-currency
+amounts must balance. For a notification about an existing transfer use
+`linkTransfer` with the outgoing leg's `transactionId`. Each source message
+has its own identity, so several notices can point to the same financial record.

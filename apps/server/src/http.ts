@@ -21,12 +21,14 @@ import { SqlClient } from "effect/sql/SqlClient";
 import { isSqlError } from "effect/sql/SqlError";
 import {
   MailStatus,
+  MailReviewAction,
   CreateAccount,
   CreateTransaction,
   TransactionQuery,
   Command,
   SummaryQuery,
 } from "@bean-budget/protocol";
+import { mailReviewQueue, reviewMail } from "./mail/review.ts";
 import { Notifications } from "./notifications.ts";
 import { LedgerError } from "./database.ts";
 import { readBudgets, readPeriods } from "./budgets.ts";
@@ -48,6 +50,27 @@ export class ServerError extends Error {
 }
 
 const routes = addRoutes([
+  route(
+    "GET",
+    "/mail/review",
+    Effect.flatMap(mailReviewQueue, (queue) =>
+      jsonResponse(queue, { headers: { "cache-control": "no-store" } }),
+    ),
+  ),
+  route(
+    "POST",
+    "/mail/review",
+    Effect.gen(function* () {
+      const input = yield* schemaBodyJson(MailReviewAction).pipe(
+        Effect.mapError((error) =>
+          Schema.isSchemaError(error) ? new LedgerError(400, "Invalid review action") : error,
+        ),
+      );
+      return yield* jsonResponse(yield* reviewMail(input), {
+        headers: { "cache-control": "no-store" },
+      });
+    }),
+  ),
   route(
     "GET",
     "/mail/status",

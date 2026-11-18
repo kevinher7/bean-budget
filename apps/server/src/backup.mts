@@ -23,6 +23,8 @@ import {
   CommandReceipt,
   CreateAccount,
   CreateTransaction,
+  MailReviewAction,
+  MailReviewResult,
   Transaction,
   validatePlanning,
   Month,
@@ -37,7 +39,7 @@ class BackupError extends Data.TaggedError("BackupError")<{ message: string }> {
 const Manifest = Schema.Struct({
   kind: Schema.Literal("bean-budget-server"),
   version: Schema.Literal(1),
-  schemaVersion: Schema.Literals([3, 4, 5]),
+  schemaVersion: Schema.Literals([3, 4, 5, 6]),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   bytes: Schema.Int.check(Schema.isGreaterThan(0)),
 });
@@ -102,6 +104,37 @@ const validateContent = Effect.gen(function* () {
     return yield* Effect.fail(
       new BackupError({ message: "Accepted mail is missing its import identity" }),
     );
+  const reviewReceipts = yield* Schema.decodeUnknownEffect(
+    Schema.Array(
+      Schema.Struct({
+        operationId: Id,
+        payload: Schema.fromJsonString(MailReviewAction),
+        result: Schema.fromJsonString(MailReviewResult),
+        state: Schema.NullOr(Schema.String),
+        transactionId: Schema.NullOr(Id),
+      }),
+    ),
+  )(
+    yield* sql`
+    SELECT r.*,m.state,m.transactionId
+    FROM mail_review_receipts r
+    LEFT JOIN mail_messages m
+      ON m.connectionId=json_extract(r.payload,'$.message.connectionId')
+      AND m.messageId=json_extract(r.payload,'$.message.messageId')
+  `,
+  );
+  for (const receipt of reviewReceipts) {
+    const ignored = receipt.payload.action === "ignore";
+    if (
+      receipt.payload.operationId !== receipt.operationId ||
+      receipt.state !== (ignored ? "ignored" : "accepted") ||
+      receipt.result.transactionId !== receipt.transactionId ||
+      ignored !== (receipt.transactionId === null)
+    )
+      return yield* Effect.fail(
+        new BackupError({ message: "Mail review receipt differs from its message" }),
+      );
+  }
   const receipts = yield* Schema.decodeUnknownEffect(
     Schema.Array(
       Schema.Struct({ operationId: Schema.String, payload: Schema.String, result: Schema.String }),
@@ -236,7 +269,7 @@ async function validateDatabase(path: string, scratch: string, version?: number)
       .prepare("SELECT max(migration_id) AS version FROM effect_sql_migrations")
       .get()?.version;
     if (
-      (actualVersion !== 3 && actualVersion !== 4 && actualVersion !== 5) ||
+      (actualVersion !== 3 && actualVersion !== 4 && actualVersion !== 5 && actualVersion !== 6) ||
       (version !== undefined && actualVersion !== version)
     )
       throw new BackupError({ message: "Unsupported database version" });
@@ -333,7 +366,7 @@ async function main() {
       const manifest = {
         kind: "bean-budget-server",
         version: 1,
-        schemaVersion: 5,
+        schemaVersion: 6,
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
       };
