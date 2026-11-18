@@ -19,6 +19,7 @@
     "check": "npm run format:check && npm run check:layout && npm run typecheck && npm run check:boundaries && npm run check:ui-colors && npm run lint",
     "server": "tsx apps/server/src/main.ts",
     "dev:server": "bash scripts/dev-server.sh",
+    "lab": "tsx apps/server/src/lab/cli.ts",
     "check:boundaries": "node tools/check-boundaries.mts",
     "android:doctor": "bash scripts/android.sh doctor",
     "android:setup": "bash scripts/android.sh setup",

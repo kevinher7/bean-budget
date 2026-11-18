@@ -40,6 +40,8 @@ Without direnv, run `nix develop path:./nix` first. On a new host, install Nix a
 
 The Android app supports offline JPY and USD entries, a compact register, and durable synchronization with the server. Signed releases bundle JavaScript and start without Metro. See [Android releases and Obtainium updates](docs/ANDROID_RELEASE.md) for building and installing an APK, and [backup and restore](docs/BACKUP.md) for mobile exports and verified server recovery. Run `npm run check` for format, type, boundary, and lint checks.
 
+Run `npm run lab -- list` for local experiments. The [lab guide](docs/LAB.md) shows how to run mail review and compare what happens when the notification socket disconnects.
+
 ## Project
 
 A personal budgeting app with a mobile app, a web app, Android spending widgets, and automatic transaction imports from bank notification emails.
