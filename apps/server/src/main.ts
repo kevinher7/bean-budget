@@ -3,6 +3,8 @@ import { Config, Effect, Redacted } from "effect";
 import { databaseLayer } from "./database.ts";
 import { ServerError, startServer } from "./http.ts";
 
+import { makeNotifications, Notifications } from "./notifications.ts";
+
 const program = Effect.gen(function* () {
   const token = yield* Config.Redacted("BEAN_TOKEN");
   if (!Redacted.value(token).trim())
@@ -12,8 +14,10 @@ const program = Effect.gen(function* () {
   const host = yield* Config.String("BEAN_HOST").pipe(Config.withDefault("127.0.0.1"));
   const path = yield* Config.String("BEAN_DATABASE").pipe(Config.withDefault("bean-budget.sqlite"));
 
+  const notifications = yield* makeNotifications;
   return yield* startServer({ token: Redacted.value(token), host, port }).pipe(
     Effect.scoped,
+    Effect.provideService(Notifications, notifications),
     Effect.provide(databaseLayer(path)),
   );
 });

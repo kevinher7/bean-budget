@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
+  AppState,
   KeyboardAvoidingView,
   Linking,
   Pressable,
@@ -32,6 +33,7 @@ import {
   LocalStorageError,
 } from "./storage.ts";
 import { loadConnection, saveConnection } from "./connection.ts";
+import { watchLedgerChanges } from "./sync.ts";
 import { pickBackupFile, saveBackupFile } from "./backup.ts";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
 import { BudgetScreen } from "./BudgetScreen.tsx";
@@ -62,8 +64,12 @@ export default function App() {
     "register" | "entry" | "account" | "connection" | "backup" | "budget"
   >("register");
   const [busy, setBusy] = useState(true);
+  const operationInProgress = useRef(true);
+  const [foreground, setForeground] = useState(AppState.currentState === "active");
+  const [syncRequest, setSyncRequest] = useState<"automatic" | "manual">();
   const [widgetRoute, setWidgetRoute] = useState<"entry" | "register">();
   const [error, setError] = useState("");
+  const [syncError, setSyncError] = useState("");
   const [message, setMessage] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today);
@@ -107,11 +113,13 @@ export default function App() {
         setLedger(result.ledger);
         setConnection(result.connection);
         if (result.connection) setUrl(result.connection.url);
+        operationInProgress.current = false;
         setBusy(false);
       },
       () => {
         if (active) {
           setError("Cannot open local data or saved connection. Reopen the app to retry.");
+          operationInProgress.current = false;
           setBusy(false);
         }
       },
@@ -120,6 +128,40 @@ export default function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) =>
+      setForeground(state === "active"),
+    );
+    setForeground(AppState.currentState === "active");
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!connection || !foreground) return;
+    return watchLedgerChanges(connection, () =>
+      setSyncRequest((waiting) => waiting ?? "automatic"),
+    );
+  }, [connection, foreground]);
+
+  const drainSyncRequest = useEffectEvent(() => {
+    if (!connection || !syncRequest || operationInProgress.current) return;
+    if (syncRequest === "automatic" && !foreground) return;
+    setSyncRequest(undefined);
+    run(
+      synchronize(connection),
+      (value) => {
+        setLedger(value);
+        setSyncError("");
+        if (syncRequest === "manual") setMessage("Synchronization finished.");
+      },
+      syncRequest === "automatic",
+    );
+  });
+
+  useEffect(() => {
+    if (!busy) drainSyncRequest();
+  }, [busy, connection, foreground, syncRequest]);
 
   useEffect(() => {
     function openWidgetUrl(url: string | null | undefined) {
@@ -157,11 +199,25 @@ export default function App() {
     setScreen(ledger.accounts.length ? "entry" : "account");
   }, [widgetRoute, busy, ledger, screen]);
 
-  function run<A, E>(effect: Effect.Effect<A, E>, onSuccess: (value: A) => void) {
-    if (busy) return;
+  function run<A, E>(
+    effect: Effect.Effect<A, E>,
+    onSuccess: (value: A) => void,
+    automatic = false,
+  ) {
+    if (operationInProgress.current) return;
+    operationInProgress.current = true;
     setBusy(true);
-    setError("");
-    setMessage("");
+    if (!automatic) {
+      setError("");
+      setMessage("");
+    }
+
+    const reportError = automatic ? setSyncError : setError;
+
+    function finish() {
+      operationInProgress.current = false;
+      setBusy(false);
+    }
     Effect.runPromise(
       effect.pipe(
         Effect.mapError((failure) => {
@@ -175,9 +231,9 @@ export default function App() {
             "message" in failure &&
             typeof failure.message === "string"
           )
-            setError(failure.message);
+            reportError(failure.message);
           else
-            setError(
+            reportError(
               "Could not complete this action. Check the fields and connection, then retry. Your entry is retained.",
             );
           return failure;
@@ -186,12 +242,18 @@ export default function App() {
     ).then(
       (value) => {
         onSuccess(value);
-        setBusy(false);
+        finish();
       },
       () => {
-        setBusy(false);
-        Effect.runPromise(loadLedger()).then(setLedger, () =>
-          setError("Cannot read local data. Reopen the app to retry."),
+        Effect.runPromise(loadLedger()).then(
+          (value) => {
+            setLedger(value);
+            finish();
+          },
+          () => {
+            setError("Cannot read local data. Reopen the app to retry.");
+            finish();
+          },
         );
       },
     );
@@ -202,10 +264,7 @@ export default function App() {
       setScreen("connection");
       return;
     }
-    run(synchronize(connection), (value) => {
-      setLedger(value);
-      setMessage("Synchronization finished.");
-    });
+    setSyncRequest("manual");
   }
 
   return (
@@ -244,9 +303,9 @@ export default function App() {
               />
             )}
           </View>
-          {error !== "" && (
+          {(error || syncError) !== "" && (
             <Text accessibilityRole="alert" style={styles.error}>
-              {error}
+              {error || syncError}
             </Text>
           )}
           {message !== "" && <Label>{message}</Label>}

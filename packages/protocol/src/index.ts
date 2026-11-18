@@ -308,3 +308,9 @@ export function validatePlanning(
     balance(Object.values(period.allocations));
   }
 }
+
+export const LedgerNotification = Schema.Struct({ type: Schema.Literal("ledgerChanged") });
+
+export const NotificationTicket = Schema.Struct({
+  ticket: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+});

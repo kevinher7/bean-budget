@@ -25,6 +25,7 @@ import {
   Command,
   SummaryQuery,
 } from "@bean-budget/protocol";
+import { Notifications } from "./notifications.ts";
 import { LedgerError } from "./database.ts";
 import { readBudgets, readPeriods } from "./budgets.ts";
 import { readSchedules, readOccurrences } from "./schedules.ts";
@@ -45,6 +46,16 @@ export class ServerError extends Error {
 }
 
 const routes = addRoutes([
+  route(
+    "POST",
+    "/notifications/ticket",
+    Effect.gen(function* () {
+      const notifications = yield* Notifications;
+      return yield* jsonResponse(yield* notifications.issueTicket, {
+        headers: { "cache-control": "no-store" },
+      });
+    }),
+  ),
   route(
     "GET",
     "/register",
@@ -118,7 +129,9 @@ const routes = addRoutes([
         const input = yield* Schema.decodeUnknownEffect(Command)({ ...value, type }).pipe(
           Effect.mapError(() => new LedgerError(400, "Invalid request")),
         );
-        return yield* jsonResponse(yield* command(input));
+        const result = yield* command(input);
+        yield* (yield* Notifications).changed;
+        return yield* jsonResponse(result);
       }),
     ),
   ),
@@ -167,7 +180,9 @@ const routes = addRoutes([
           Schema.isSchemaError(error) ? new LedgerError(400, "Invalid request") : error,
         ),
       );
-      return yield* jsonResponse(yield* createAccount(input), {
+      const result = yield* createAccount(input);
+      yield* (yield* Notifications).changed;
+      return yield* jsonResponse(result, {
         status: 201,
         headers: { "cache-control": "no-store" },
       });
@@ -200,7 +215,9 @@ const routes = addRoutes([
           Schema.isSchemaError(error) ? new LedgerError(400, "Invalid request") : error,
         ),
       );
-      return yield* jsonResponse(yield* createTransaction(input), {
+      const result = yield* createTransaction(input);
+      yield* (yield* Notifications).changed;
+      return yield* jsonResponse(result, {
         status: 201,
         headers: { "cache-control": "no-store" },
       });
@@ -235,6 +252,10 @@ export const startServer = Effect.fn("Http.serve")(function* (config: {
       },
       catch: () => new LedgerError(400, "Invalid request URL"),
     });
+    if (request.method === "GET" && url.pathname === "/notifications") {
+      const notifications = yield* Notifications;
+      return yield* notifications.connect(url.searchParams.get("ticket") ?? "");
+    }
     const publicRoute = request.method === "GET" && url.pathname === "/health";
     if (!publicRoute && !authorized(request.headers.authorization, config.token))
       return yield* jsonResponse(
