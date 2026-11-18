@@ -47,3 +47,9 @@ All planning edits persist with ordered outbox operations. Local summaries use s
 During unresolved transaction receipt reconciliation, incoming account transactions may remain deferred. The app preserves those snapshot rows in exports and hides affected budget availability until synchronization finishes. It does not calculate carryover from an incomplete ledger. Failed planning operations also hide availability until recovery. Exports retain conflicting provisional payments even when the accepted estimate has changed.
 
 Mobile schema 5 and backup format 2 include planning state, deferred snapshot transactions and planning operations. Format-1 exports still import with empty planning state. Older binaries cannot open schema 5. Export a recovery copy before updating. Native balance widgets accept schema 5; TODAY/WEEK widgets remain DEMO previews.
+
+While the app is active, it requests synchronization on foreground entry,
+WebSocket connection, ledger change hints, and once per minute. Sync now uses
+the same queue. A request arriving during a local operation or sync waits for
+that operation to finish. Android can suspend the app in the background, so
+this does not guarantee background refresh.

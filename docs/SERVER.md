@@ -145,3 +145,15 @@ Send top-level `revision` with schedule and period replacements, occurrence gene
 Generation accepts an optional client `id`. Pending-payment creation accepts an optional client `transactionId`. Receipts return `accepted: true` with canonical `occurrenceId` for generation and both canonical IDs for pending-payment creation. Retries preserve these results. Schedule/month uniqueness still prevents duplicate occurrences when another device generates first. Mobile reconciles canonical occurrence and transaction identities before dependent operations.
 
 Reservation accounting follows the occurrence's expected budget period. Its linked transaction stays excluded from discretionary spending even when settlement happens in another period. Changing a historical selection recalculates commitments and subsequent carryover. The server retains the existing full-settlement and manual-forecast policies.
+
+## Ledger change notifications
+
+Obtain a single-use ticket with an authenticated `POST /notifications/ticket`.
+Connect to `GET /notifications?ticket=...` on the same listener using WebSocket.
+Tickets expire after 30 seconds. When an Origin header is present, its authority
+must match the request host. Keep bearer tokens out of WebSocket URLs and
+configure proxies to forward HTTP upgrades and omit ticket query strings from logs.
+
+After a successful register write, the server sends `{"type":"ledgerChanged"}`.
+Clients use this hint to fetch a register snapshot. Hints may be dropped or
+coalesced, and replaying a receipt may send another hint.
