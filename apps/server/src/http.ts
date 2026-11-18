@@ -17,8 +17,10 @@ import {
   schemaBodyJson,
 } from "effect/http/HttpServerRequest";
 import { json as jsonResponse } from "effect/http/HttpServerResponse";
+import { SqlClient } from "effect/sql/SqlClient";
 import { isSqlError } from "effect/sql/SqlError";
 import {
+  MailStatus,
   CreateAccount,
   CreateTransaction,
   TransactionQuery,
@@ -46,6 +48,23 @@ export class ServerError extends Error {
 }
 
 const routes = addRoutes([
+  route(
+    "GET",
+    "/mail/status",
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      const status = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const messages =
+            yield* sql`SELECT connectionId,state,reason,count(*) AS count FROM mail_messages GROUP BY connectionId,state,reason ORDER BY connectionId,state,reason`;
+          const runs =
+            yield* sql`SELECT connectionId,generation,startedAt,finishedAt,status,reason FROM mail_runs ORDER BY startedAt DESC LIMIT 20`;
+          return yield* Schema.decodeUnknownEffect(MailStatus)({ messages, runs });
+        }),
+      );
+      return yield* jsonResponse(status, { headers: { "cache-control": "no-store" } });
+    }),
+  ),
   route(
     "POST",
     "/notifications/ticket",

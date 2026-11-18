@@ -37,7 +37,7 @@ class BackupError extends Data.TaggedError("BackupError")<{ message: string }> {
 const Manifest = Schema.Struct({
   kind: Schema.Literal("bean-budget-server"),
   version: Schema.Literal(1),
-  schemaVersion: Schema.Literals([3, 4]),
+  schemaVersion: Schema.Literals([3, 4, 5]),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   bytes: Schema.Int.check(Schema.isGreaterThan(0)),
 });
@@ -75,6 +75,33 @@ const validateContent = Effect.gen(function* () {
     yield* Schema.decodeUnknownEffect(
       Schema.fromJsonString(Schema.Struct({ namespace: Name, key: Name })),
     )(identity.identity);
+  const mailCommands = yield* Schema.decodeUnknownEffect(
+    Schema.Array(
+      Schema.Struct({
+        connectionId: Id,
+        messageId: Name,
+        command: Schema.fromJsonString(CreateTransaction),
+      }),
+    ),
+  )(yield* sql`SELECT connectionId,messageId,command FROM mail_messages WHERE command IS NOT NULL`);
+  for (const row of mailCommands) {
+    if (
+      row.command.importIdentity?.namespace !== `gmail:${row.connectionId}` ||
+      row.command.importIdentity.key !== row.messageId ||
+      row.command.source !== "mail-bean"
+    )
+      return yield* Effect.fail(
+        new BackupError({ message: "Invalid saved mail command identity" }),
+      );
+  }
+  const acceptedWithoutIdentity = yield* sql`SELECT m.messageId FROM mail_messages m
+    LEFT JOIN import_identities i ON i.identity=json_object('namespace','gmail:' || m.connectionId,'key',m.messageId)
+      AND i.transactionId=m.transactionId
+    WHERE m.state='accepted' AND i.identity IS NULL LIMIT 1`;
+  if (acceptedWithoutIdentity.length)
+    return yield* Effect.fail(
+      new BackupError({ message: "Accepted mail is missing its import identity" }),
+    );
   const receipts = yield* Schema.decodeUnknownEffect(
     Schema.Array(
       Schema.Struct({ operationId: Schema.String, payload: Schema.String, result: Schema.String }),
@@ -209,7 +236,7 @@ async function validateDatabase(path: string, scratch: string, version?: number)
       .prepare("SELECT max(migration_id) AS version FROM effect_sql_migrations")
       .get()?.version;
     if (
-      (actualVersion !== 3 && actualVersion !== 4) ||
+      (actualVersion !== 3 && actualVersion !== 4 && actualVersion !== 5) ||
       (version !== undefined && actualVersion !== version)
     )
       throw new BackupError({ message: "Unsupported database version" });
@@ -306,7 +333,7 @@ async function main() {
       const manifest = {
         kind: "bean-budget-server",
         version: 1,
-        schemaVersion: 4,
+        schemaVersion: 5,
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
       };

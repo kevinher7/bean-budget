@@ -157,3 +157,21 @@ configure proxies to forward HTTP upgrades and omit ticket query strings from lo
 After a successful register write, the server sends `{"type":"ledgerChanged"}`.
 Clients use this hint to fetch a register snapshot. Hints may be dropped or
 coalesced, and replaying a receipt may send another hint.
+
+## Gmail debit notifications
+
+Mail ingestion is disabled by default. When enabled, the server runs a job at startup and waits 15 minutes between runs. Mobile foreground notifications arrive after the ledger commit. They do not change the Gmail polling interval.
+
+Set `BEAN_MAIL_ENABLED=true` and pass the following backend settings through your deployment's private configuration. The Gmail OAuth client and refresh token must already have the Gmail readonly scope. Keep these credentials in secret storage outside SQLite and mobile settings.
+
+- `BEAN_GMAIL_CLIENT_ID`, `BEAN_GMAIL_CLIENT_SECRET` and `BEAN_GMAIL_REFRESH_TOKEN`.
+- `BEAN_MAIL_CONFIG` is a JSON object. Set a stable `connectionId` for the mailbox and keep it when rotating credentials. Set `cutover` to the desired first Gmail receipt date in Asia/Tokyo, in YYYY-MM-DD format. Set `accounts` to a mapping of `smbc` and/or `yucho` to existing JPY account IDs.
+- `status` defaults to `pending`. Set it to `posted` only if these notifications should affect posted balances immediately.
+- `merchants` is optional. Each entry has `merchant` and optional `categoryId`, `payeeId` and `transfer`. Matching uses the exact merchant after Unicode normalization, whitespace folding and case folding. Unknown merchants can enter the register without a category or payee. Mark known transfer merchants with `transfer: true` to hold their notices for review.
+
+The first run searches all matching mail at or after the cutover, then drains Gmail history from a baseline captured before the search. Later runs read history pages. If Gmail expires the history cursor, the server repeats the cutover search and deduplicates previously discovered messages. The issuer's transaction date stays separate from Gmail receipt time.
+
+The server saves discovered messages, run outcomes and review reasons. It holds unavailable messages, malformed debit notices, mapping errors and same-day same-amount candidates for review. An OAuth failure records a blocked run. Check the configured credential and readonly scope before the next run. Imported mail amounts are whole yen and accepted imports appear in the regular register.
+
+Authenticated `GET /mail/status` returns message counts by mailbox, state and
+reason, plus the 20 most recent runs. It excludes message bodies and credentials.

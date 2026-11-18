@@ -14,7 +14,7 @@ export class LedgerError extends Error {
   }
 }
 
-export const databaseLayer = (path: string, version = 4) =>
+export const databaseLayer = (path: string, version = 5) =>
   Layer.merge(
     Layer.effect(
       SqlClient,
