@@ -22,6 +22,7 @@ export type GmailMetadata = {
   from?: string;
   subject?: string;
   internalDate?: string;
+  authenticatedFromDomain?: string;
 };
 
 export type GmailAdapter = {
@@ -223,6 +224,7 @@ export function createGmailAdapter(config: {
       });
       params.append("metadataHeaders", "From");
       params.append("metadataHeaders", "Subject");
+      params.append("metadataHeaders", "Authentication-Results");
       return call(metadataResponse, `/messages/${encodeURIComponent(id)}`, params).pipe(
         Effect.flatMap((response) => {
           if (response.id !== id) return Effect.fail(new GmailError("invalid"));
@@ -230,7 +232,21 @@ export function createGmailAdapter(config: {
             response.payload.headers?.find((value) => value.name.toLowerCase() === name)?.value;
           const from = header("from");
           const subject = header("subject");
+          const authentication = response.payload.headers?.filter(
+            ({ name }) => name.toLowerCase() === "authentication-results",
+          );
+          const result = authentication?.length === 1 ? authentication[0]?.value : undefined;
+          const [authority, ...checks] = result?.split(";") ?? [];
+          const dmarc = checks.filter((check) => /^\s*dmarc\s*=/i.test(check));
+          const authenticatedFromDomain =
+            authority?.trim().toLowerCase() === "mx.google.com" && dmarc.length === 1
+              ? dmarc[0]
+                  ?.replace(/\([^()]*\)/g, " ")
+                  .match(/^\s*dmarc=pass\s+header\.from=([a-z0-9.-]+)\s*$/i)?.[1]
+                  ?.toLowerCase()
+              : undefined;
           return Effect.succeed({
+            ...(authenticatedFromDomain === undefined ? {} : { authenticatedFromDomain }),
             ...(from === undefined ? {} : { from }),
             ...(subject === undefined ? {} : { subject }),
             ...(response.internalDate === undefined ? {} : { internalDate: response.internalDate }),

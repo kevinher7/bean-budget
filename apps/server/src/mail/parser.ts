@@ -6,12 +6,12 @@ const issuers = {
   yucho: {
     sender: "yuchodebit@jp-bank.japanpost.jp",
     pattern:
-      /利用日時\s+(?<date>\d{4}\/\d{2}\/\d{2})\s+(?<time>\d{2}:\d{2}:\d{2})[\s\S]*?利用店舗\s+(?<merchant>[^\n]+)[\s\S]*?利用金額\s+(?<amount>[\d,]+)円[\s\S]*?承認番号\s+(?<approval>\d+)/,
+      /利用日時\s+(?<date>\d{4}\/\d{2}\/\d{2})\s+(?<time>\d{2}:\d{2}:\d{2})[\s\S]*?利用店舗\s+(?<merchant>[^\n]+)[\s\S]*?利用金額\s+(?<amount>[\d,]+)円(?=[ \t]*(?:\r?\n|$))[\s\S]*?承認番号\s+(?<approval>\d+)(?=[ \t]*(?:\r?\n|$))/,
   },
   smbc: {
     sender: "smbc-debit@smbc-card.com",
     pattern:
-      /利用日\s*[:：]\s*(?<date>\d{4}\/\d{2}\/\d{2})\s+(?<time>\d{2}:\d{2}:\d{2})[\s\S]*?利用先\s*[:：]\s*(?<merchant>[^\n]+)[\s\S]*?利用金額\s*[:：]\s*(?<amount>[\d,]+)円[\s\S]*?承認番号\s*[:：]\s*(?<approval>\d+)/,
+      /利用日\s*[:：]\s*(?<date>\d{4}\/\d{2}\/\d{2})\s+(?<time>\d{2}:\d{2}:\d{2})[\s\S]*?利用先\s*[:：]\s*(?<merchant>[^\n]+)[\s\S]*?利用金額\s*[:：]\s*(?<amount>[\d,]+)円(?=[ \t]*(?:\r?\n|$))[\s\S]*?承認番号\s*[:：]\s*(?<approval>\d+)(?=[ \t]*(?:\r?\n|$))/,
   },
 } as const;
 
@@ -50,6 +50,10 @@ export function matchesMailHeaders(metadata: { from?: string; subject?: string }
     identifyIssuer(address) !== undefined &&
     (metadata.subject?.includes(mailSubject) === true || metadata.subject?.includes("=?") === true)
   );
+}
+
+export function issuerDomain(issuer: MailIssuer): string {
+  return issuers[issuer].sender.split("@")[1] ?? "";
 }
 
 export function normalizeMerchant(merchant: string): string {

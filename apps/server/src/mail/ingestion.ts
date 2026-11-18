@@ -6,7 +6,7 @@ import { CreateTransaction } from "@bean-budget/protocol";
 import { createTransaction } from "../ledger.ts";
 import { Notifications } from "../notifications.ts";
 import { type GmailAdapter } from "./gmail.ts";
-import { matchesMailHeaders, normalizeMerchant, parseMail } from "./parser.ts";
+import { issuerDomain, matchesMailHeaders, normalizeMerchant, parseMail } from "./parser.ts";
 
 const HistoryId = Schema.String.check(Schema.isPattern(/^\d{1,100}$/));
 
@@ -18,6 +18,7 @@ export const MailIngestionConfig = Schema.Struct({
   connectionId: Id,
   cutover: FinancialDate,
   accounts: Schema.Struct({ smbc: Schema.optional(Id), yucho: Schema.optional(Id) }),
+  trustGmailAuthenticationResults: Schema.optional(Schema.Boolean),
   status: Schema.optional(Schema.Literals(["pending", "posted"])),
   merchants: Schema.optional(
     Schema.Array(
@@ -230,11 +231,19 @@ export const runMailIngestion = Effect.fn("Mail.ingest")(function* (
       importIdentity: { namespace: `gmail:${connectionId}`, key: messageId },
     });
     const payload = yield* Schema.encodeEffect(FrozenCommand)(command);
+    const authenticated =
+      config.trustGmailAuthenticationResults === true &&
+      headers.authenticatedFromDomain === issuerDomain(parsed.issuer);
+    const reviewReason = mapping?.transfer
+      ? "transfer-review"
+      : authenticated
+        ? null
+        : "sender-unverified";
     yield* fenced(sql`UPDATE mail_messages SET command=${payload},provenance=${provenance},
-      state=${mapping?.transfer ? "review" : "pending"},
-      reason=${mapping?.transfer ? "transfer-review" : null}
+      state=${reviewReason === null ? "pending" : "review"},
+      reason=${reviewReason}
       WHERE connectionId=${connectionId} AND messageId=${messageId} AND state IN ('pending','retry')`);
-    if (!mapping?.transfer) yield* accept(messageId, payload);
+    if (reviewReason === null) yield* accept(messageId, payload);
   });
 
   const work = Effect.gen(function* () {

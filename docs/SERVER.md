@@ -175,3 +175,10 @@ The server saves discovered messages, run outcomes and review reasons. It holds 
 
 Authenticated `GET /mail/status` returns message counts by mailbox, state and
 reason, plus the 20 most recent runs. It excludes message bodies and credentials.
+
+By default, parsed notices need explicit review before they become purchases.
+Set `trustGmailAuthenticationResults: true` only for a mailbox whose delivery
+path strips forged Gmail Authentication-Results headers. With that setting,
+automatic acceptance requires a single `mx.google.com` result reporting
+`dmarc=pass` for the issuer's exact From domain. Missing, failed, or ambiguous
+authentication leaves the notice in review. See [RFC 8601](https://www.rfc-editor.org/rfc/rfc8601.html).
