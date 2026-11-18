@@ -314,3 +314,24 @@ export const LedgerNotification = Schema.Struct({ type: Schema.Literal("ledgerCh
 export const NotificationTicket = Schema.Struct({
   ticket: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
 });
+
+export const MailStatus = Schema.Struct({
+  messages: Schema.Array(
+    Schema.Struct({
+      connectionId: Id,
+      state: Schema.Literals(["pending", "retry", "review", "ignored", "accepted"]),
+      reason: Schema.NullOr(Schema.String),
+      count: Schema.Int,
+    }),
+  ),
+  runs: Schema.Array(
+    Schema.Struct({
+      connectionId: Id,
+      generation: Schema.Int,
+      startedAt: Schema.Int,
+      finishedAt: Schema.NullOr(Schema.Int),
+      status: Schema.String,
+      reason: Schema.NullOr(Schema.String),
+    }),
+  ),
+});

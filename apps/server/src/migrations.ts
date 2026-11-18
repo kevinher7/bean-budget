@@ -4,6 +4,7 @@ import { SqlClient } from "effect/sql/SqlClient";
 import initial, { definitions } from "../migrations/001_initial_ledger.ts";
 
 import tracking from "../migrations/002_tracking.ts";
+import mailIngestion from "../migrations/005_mail_ingestion.ts";
 import mobilePlanning from "../migrations/004_mobile_planning.ts";
 import relationalBudget from "../migrations/003_relational_budget.ts";
 
@@ -13,6 +14,7 @@ const registry = [
   { id: 2, name: "tracking", effect: tracking },
   { id: 3, name: "relational_budget", effect: relationalBudget },
   { id: 4, name: "mobile_planning", effect: mobilePlanning },
+  { id: 5, name: "mail_ingestion", effect: mailIngestion },
 ];
 
 const incompatible = () =>
@@ -25,7 +27,7 @@ const incompatible = () =>
 const normalize = (sql: string) =>
   sql.replace(/'(?:''|[^'])*'|\s+/g, (token) => (token.startsWith("'") ? token : ""));
 
-export const migrateTo = Effect.fn("Migrations.to")(function* (version = 4) {
+export const migrateTo = Effect.fn("Migrations.to")(function* (version = 5) {
   const sql = yield* SqlClient;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
