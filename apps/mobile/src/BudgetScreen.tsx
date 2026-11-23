@@ -1,9 +1,16 @@
-import { useState } from "react";
-import { View } from "react-native";
+import { useEffect, useState } from "react";
+import { AppState, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { Schema } from "effect";
-import { monthStart, nextMonth, parseMoney } from "@bean-budget/budget";
-import { Budget, Command, Schedule } from "@bean-budget/protocol";
+import {
+  monthStart,
+  nextMonth,
+  parseMoney,
+  tokyoDate,
+  periodWeeks,
+  type Rhythm,
+} from "@bean-budget/budget";
+import { Budget, BudgetPeriod, Command, Schedule } from "@bean-budget/protocol";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
 import { spacing } from "./ui/theme.ts";
 import {
@@ -37,12 +44,7 @@ function previousMonth(month: string) {
 }
 
 function today() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  return tokyoDate(Date.now());
 }
 
 function ToggleList({
@@ -100,9 +102,28 @@ export function BudgetScreen({
   const [mode, setMode] = useState<"period" | "create" | "schedules">("period");
   const budget =
     ledger.planning.budgets.find((row) => row.id === selected) ?? ledger.planning.budgets[0];
-  const calendarMonth = today().slice(0, 7);
+  const [financialDate, setFinancialDate] = useState(today);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    function update() {
+      clearTimeout(timer);
+      const date = today();
+      setFinancialDate(date);
+      const nextMidnight = Date.parse(date + "T00:00:00+09:00") + 86_400_000;
+      timer = setTimeout(update, Math.max(1, nextMidnight - Date.now()));
+    }
+    update();
+    const listener = AppState.addEventListener("change", (state) => {
+      if (state === "active") update();
+    });
+    return () => {
+      clearTimeout(timer);
+      listener.remove();
+    };
+  }, []);
+  const calendarMonth = financialDate.slice(0, 7);
   const currentMonth =
-    budget && today() < monthStart(calendarMonth, budget.startDay)
+    budget && financialDate < monthStart(calendarMonth, budget.startDay)
       ? previousMonth(calendarMonth)
       : calendarMonth;
   const target =
@@ -525,6 +546,7 @@ function Period({
   createCategory: (name: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [pacingMonth, setPacingMonth] = useState("");
   const [reserveEditing, setReserveEditing] = useState(false);
   let summary: ReturnType<typeof periodSummary>;
   let missing: ReturnType<typeof missingOccurrences> = [];
@@ -566,7 +588,7 @@ function Period({
             </Label>
             <Label>Reserved commitments {money(summary.commitments, budget.currency)}</Label>
             <Label>
-              Assignable {money(summary.assignable, budget.currency)} · unassigned{" "}
+              Assignable {money(summary.assignable, budget.currency)} · unbudgeted{" "}
               {money(summary.unassigned, budget.currency)}
             </Label>
             <Label muted>
@@ -579,7 +601,7 @@ function Period({
                   remaining {money(remaining, budget.currency)}
                 </Label>
                 <Label muted>
-                  Allocated{" "}
+                  Monthly allocation{" "}
                   {money(
                     ledger.planning.periods.find(
                       (row) => row.budgetId === budget.id && row.month === month,
@@ -588,6 +610,18 @@ function Period({
                   )}{" "}
                   · net spending {money(summary?.spending[id] ?? 0, budget.currency)}
                 </Label>
+                {summary?.pacing[id]?.map((week) => (
+                  <View key={week.start}>
+                    <Label muted>
+                      {week.start} · {money(week.limit, budget.currency)}{" "}
+                      {week.fixed ? "fixed" : "flexible"} · spent{" "}
+                      {money(week.spent, budget.currency)}
+                    </Label>
+                    {week.leftToday !== null && (
+                      <Label>Left today {money(week.leftToday, budget.currency)}</Label>
+                    )}
+                  </View>
+                ))}
               </View>
             ))}
           </>
@@ -644,6 +678,34 @@ function Period({
         />
       )}
       <Action
+        title="Plan category rhythms"
+        secondary
+        disabled={busy || !summary}
+        onPress={() => setPacingMonth(pacingMonth ? "" : nextMonth(month))}
+      />
+      {pacingMonth !== "" && (
+        <>
+          <Selection
+            label="Effective period"
+            value={pacingMonth}
+            disabled={busy}
+            options={[month, nextMonth(month)].map((id) => ({ id, name: id }))}
+            onChange={(id) => {
+              if (id) setPacingMonth(id);
+            }}
+          />
+          <CategoryPlanning
+            key={pacingMonth}
+            month={pacingMonth}
+            ledger={ledger}
+            budget={budget}
+            busy={busy}
+            save={save}
+            done={() => setPacingMonth("")}
+          />
+        </>
+      )}
+      <Action
         title="Change reserved bills from this period"
         secondary
         disabled={busy}
@@ -670,6 +732,237 @@ function Period({
           save={save}
         />
       ))}
+    </View>
+  );
+}
+
+type CategoryPlanningProps = {
+  ledger: Ledger;
+  budget: typeof Budget.Type;
+  month: string;
+  busy: boolean;
+  save: Save;
+  done: () => void;
+};
+
+function CategoryPlanning(props: CategoryPlanningProps) {
+  const [category, setCategory] = useState("");
+  let summary: ReturnType<typeof periodSummary>;
+  try {
+    summary = periodSummary(
+      props.ledger.planning,
+      props.budget.id,
+      props.month,
+      props.ledger.transactions,
+    );
+  } catch {
+    return (
+      <Label>
+        Category planning is unavailable for this period. Check the supported date range and
+        amounts.
+      </Label>
+    );
+  }
+  return (
+    <View style={{ gap: spacing.small }}>
+      <Selection
+        label="Planning category"
+        value={category}
+        disabled={props.busy}
+        options={props.ledger.categories}
+        onChange={setCategory}
+      />
+      {summary && category !== "" && (
+        <CategoryPacingEditor key={category} {...props} category={category} summary={summary} />
+      )}
+    </View>
+  );
+}
+
+function CategoryPacingEditor({
+  ledger,
+  budget,
+  month,
+  category,
+  summary,
+  busy,
+  save,
+  done,
+}: CategoryPlanningProps & {
+  category: string;
+  summary: NonNullable<ReturnType<typeof periodSummary>>;
+}) {
+  const [plan] = useState(() =>
+    ledger.planning.periods.find((row) => row.budgetId === budget.id && row.month === month),
+  );
+  const initial = plan?.categoryPlans?.[category];
+  const inherited = summary.rhythms[category] ?? "monthly";
+  const [rhythm, setRhythm] = useState<Rhythm>(initial?.rhythm ?? inherited);
+  const opening = summary.opening[category] ?? 0;
+  const [carry, setCarry] = useState(
+    initial?.carryIn === undefined ? "" : decimal(initial.carryIn, budget.currency),
+  );
+  const [limits, setLimits] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(initial?.limits ?? {}).map(([start, edit]) => [
+        start,
+        decimal(edit.amount, budget.currency),
+      ]),
+    ),
+  );
+  const [preview, setPreview] = useState<{ command: PlanningCommand; lines: string[] }>();
+  const [error, setError] = useState("");
+  const start = monthStart(month, budget.startDay);
+  const weeks = periodWeeks(start, monthStart(nextMonth(month), budget.startDay));
+  const allocatingCarry = rhythm !== "monthly" && opening > 0;
+  function previewPlan() {
+    setError("");
+    setPreview(undefined);
+    try {
+      if (
+        ledger.planningConflict ||
+        ledger.deferredTransactions.some((row) => budget.accountIds.includes(row.accountId))
+      )
+        throw new Error("Finish synchronization before editing this plan");
+      const date = today();
+      const categoryPlans = { ...plan?.categoryPlans };
+      const fixedLimits: Record<string, { amount: number; fixedFrom: string }> = {};
+      if (rhythm !== "monthly")
+        for (const week of weeks) {
+          const value = limits[week.start]?.trim();
+          if (value)
+            fixedLimits[week.start] = {
+              amount: parseMoney(value, budget.currency),
+              fixedFrom:
+                initial?.limits?.[week.start]?.fixedFrom ?? (date >= week.end ? week.start : date),
+            };
+        }
+      const setting: NonNullable<typeof BudgetPeriod.Type.categoryPlans>[string] = {
+        ...(initial?.rhythm !== undefined || rhythm !== inherited ? { rhythm } : {}),
+        ...(allocatingCarry
+          ? { rhythm, carryIn: parseMoney(carry.trim(), budget.currency) }
+          : rhythm !== "monthly" && (inherited === "monthly" || initial?.carryIn !== undefined)
+            ? { rhythm, carryIn: initial?.carryIn ?? 0 }
+            : {}),
+        ...(Object.keys(fixedLimits).length ? { limits: fixedLimits } : {}),
+      };
+      if (allocatingCarry && (setting.carryIn ?? 0) > opening)
+        throw new Error("Carry into weeks cannot exceed the opening balance");
+      if (Object.keys(setting).length) categoryPlans[category] = setting;
+      else delete categoryPlans[category];
+      const command: PlanningCommand = {
+        type: "plan",
+        operationId: randomUUID(),
+        revision: plan?.revision ?? 0,
+        value: Schema.decodeUnknownSync(BudgetPeriod)({
+          budgetId: budget.id,
+          month,
+          incomeForecast: plan?.incomeForecast ?? null,
+          allocations: plan?.allocations ?? {},
+          categoryPlans,
+        }),
+      };
+      const projected = projectPlanning(ledger.planning, [command]);
+      const after = periodSummary(projected, budget.id, month, ledger.transactions);
+      if (!after) throw new Error("Period unavailable");
+      const lines = [
+        `${month} unbudgeted ${money(summary.unassigned, budget.currency)} → ${money(after.unassigned, budget.currency)}`,
+      ];
+      for (const week of after.pacing[category] ?? [])
+        lines.push(
+          `${week.start} · ${money(week.limit, budget.currency)} ${week.fixed ? "fixed" : "flexible"}`,
+        );
+      const current =
+        date < monthStart(date.slice(0, 7), budget.startDay)
+          ? previousMonth(date.slice(0, 7))
+          : date.slice(0, 7);
+      if (month < current) {
+        const beforeCurrent = periodSummary(
+          ledger.planning,
+          budget.id,
+          current,
+          ledger.transactions,
+        );
+        const afterCurrent = periodSummary(projected, budget.id, current, ledger.transactions);
+        if (beforeCurrent && afterCurrent)
+          lines.push(
+            `${current} unbudgeted ${money(beforeCurrent.unassigned, budget.currency)} → ${money(afterCurrent.unassigned, budget.currency)}`,
+          );
+      }
+      setPreview({ command, lines });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Invalid category plan");
+    }
+  }
+  return (
+    <View style={{ gap: spacing.small }}>
+      <Selection
+        label="Category rhythm"
+        disabled={busy}
+        value={rhythm}
+        options={[
+          { id: "monthly", name: "Monthly" },
+          { id: "weekly", name: "Weekly" },
+          { id: "daily", name: "Daily" },
+        ]}
+        onChange={(id) => {
+          if (id === "monthly" || id === "weekly" || id === "daily") {
+            setRhythm(id);
+            setPreview(undefined);
+          }
+        }}
+      />
+      {allocatingCarry && (
+        <>
+          <Label>
+            Opening balance {money(opening, budget.currency)}. The rest returns to unbudgeted.
+          </Label>
+          <Field
+            label="Carry into weeks"
+            value={carry}
+            onChangeText={(value) => {
+              setCarry(value);
+              setPreview(undefined);
+            }}
+            editable={!busy}
+            keyboardType="decimal-pad"
+          />
+        </>
+      )}
+      {rhythm !== "monthly" && (
+        <>
+          <Label muted>
+            Blank weeks use the monthly allocation. Enter an amount to fix a week.
+          </Label>
+          {weeks.map((week) => (
+            <Field
+              key={week.start}
+              label={`Week starting ${week.start}`}
+              value={limits[week.start] ?? ""}
+              onChangeText={(value) => {
+                setLimits({ ...limits, [week.start]: value });
+                setPreview(undefined);
+              }}
+              editable={!busy}
+              keyboardType="decimal-pad"
+            />
+          ))}
+        </>
+      )}
+      <Action title="Preview category plan" disabled={busy} onPress={previewPlan} />
+      {error !== "" && <Label>{error}</Label>}
+      {preview && (
+        <>
+          {preview.lines.map((line) => (
+            <Label key={line}>{line}</Label>
+          ))}
+          <Action
+            title="Save category plan"
+            disabled={busy}
+            onPress={() => save(() => [preview.command], done)}
+          />
+        </>
+      )}
     </View>
   );
 }

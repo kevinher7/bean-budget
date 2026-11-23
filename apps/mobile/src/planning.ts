@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { monthStart, nextMonth, summarizePeriods } from "@bean-budget/budget";
+import { monthStart, nextMonth, summarizePeriods, tokyoDate } from "@bean-budget/budget";
 import { Command, Planning, Transaction } from "@bean-budget/protocol";
 
 export const emptyPlanning: typeof Planning.Type = {
@@ -40,12 +40,20 @@ export function projectPlanning(base: typeof Planning.Type, commands: readonly P
         state.schedules.push({ ...command.value, revision: (command.revision ?? 0) + 1 });
         break;
       }
-      case "plan":
+      case "plan": {
+        const previous = state.periods.find(
+          (row) => row.budgetId === command.value.budgetId && row.month === command.value.month,
+        );
         state.periods = state.periods.filter(
           (row) => row.budgetId !== command.value.budgetId || row.month !== command.value.month,
         );
-        state.periods.push({ ...command.value, revision: (command.revision ?? 0) + 1 });
+        state.periods.push({
+          ...previous,
+          ...command.value,
+          revision: (command.revision ?? 0) + 1,
+        });
         break;
+      }
       case "reservation":
         state.reservations = state.reservations.filter(
           (row) => row.budgetId !== command.value.budgetId || row.month !== command.value.month,
@@ -123,6 +131,7 @@ export function periodSummary(
   budgetId: string,
   month: string,
   transactions: readonly (typeof Transaction.Type)[],
+  asOf = tokyoDate(Date.now()),
 ) {
   const budget = state.budgets.find((row) => row.id === budgetId);
   if (!budget || month < budget.firstMonth) throw new Error("Select a period within this budget");
@@ -131,6 +140,7 @@ export function periodSummary(
     month,
     transactions.filter((row) => budget.accountIds.includes(row.accountId)),
     { plans: state.periods, occurrences: state.occurrences, reservations: state.reservations },
+    asOf,
   );
 }
 

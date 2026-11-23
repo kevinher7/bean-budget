@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
+import { PlanningRhythm } from "@bean-budget/budget";
 import { Budget, BudgetPeriod, Reservation } from "@bean-budget/protocol";
 
 export const readBudgets = Effect.fn("Budgets.read")(function* (id?: string) {
@@ -66,8 +67,52 @@ export const readPeriods = Effect.fn("Budgets.readPeriods")(function* (
           )(
             yield* sql`SELECT categoryId,amount FROM budget_allocations WHERE budgetId=${row.budgetId} AND month=${row.month}`,
           );
+          const settings = yield* Schema.decodeUnknownEffect(
+            Schema.Array(
+              Schema.Struct({
+                categoryId: Schema.String,
+                rhythm: Schema.NullOr(PlanningRhythm),
+                carryIn: Schema.NullOr(Schema.Int),
+              }),
+            ),
+          )(
+            yield* sql`SELECT categoryId, rhythm, carryIn FROM budget_category_plans WHERE budgetId=${budgetId} AND month=${row.month}`,
+          );
+          const limits = yield* Schema.decodeUnknownEffect(
+            Schema.Array(
+              Schema.Struct({
+                categoryId: Schema.String,
+                start: Schema.String,
+                fixedFrom: Schema.String,
+                amount: Schema.Int,
+              }),
+            ),
+          )(
+            yield* sql`SELECT categoryId, start, fixedFrom, amount FROM budget_week_limits WHERE budgetId=${budgetId} AND month=${row.month}`,
+          );
           return yield* Schema.decodeUnknownEffect(BudgetPeriod)({
             ...row,
+            ...(settings.length
+              ? {
+                  categoryPlans: Object.fromEntries(
+                    settings.map((setting) => [
+                      setting.categoryId,
+                      {
+                        ...(setting.rhythm === null ? {} : { rhythm: setting.rhythm }),
+                        ...(setting.carryIn === null ? {} : { carryIn: setting.carryIn }),
+                        limits: Object.fromEntries(
+                          limits
+                            .filter((limit) => limit.categoryId === setting.categoryId)
+                            .map((limit) => [
+                              limit.start,
+                              { amount: limit.amount, fixedFrom: limit.fixedFrom },
+                            ]),
+                        ),
+                      },
+                    ]),
+                  ),
+                }
+              : {}),
             allocations: Object.fromEntries(allocations.map((a) => [a.categoryId, a.amount])),
           });
         }),

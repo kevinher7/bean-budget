@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 
+import { paceCategory, periodWeeks, type CategoryPlan, type Rhythm } from "./weeks.ts";
+
+export { periodWeeks, PlanningRhythm, tokyoDate, type Rhythm } from "./weeks.ts";
+
 export const MAX_UNITS = 1_000_000_000_000;
 
 export const Money = Schema.Number.check(
@@ -128,11 +132,14 @@ export function summarizePeriods(
     plans: readonly {
       budgetId: string;
       month: string;
+      categoryPlans?: Readonly<Record<string, CategoryPlan>> | undefined;
       incomeForecast: number | null;
       allocations: Readonly<Record<string, number>>;
     }[];
   },
+  asOf: string,
 ) {
+  const rhythms = new Map<string, Rhythm>();
   const selections = state.reservations
     ?.filter((r) => r.budgetId === budget.id)
     .slice()
@@ -181,6 +188,9 @@ export function summarizePeriods(
     const expectedIncome =
       plan?.incomeForecast ?? balance(occurrences.filter((o) => o.amount > 0).map((o) => o.amount));
     const spendingUnits = new Map<string, bigint>();
+    for (const [id, setting] of Object.entries(plan?.categoryPlans ?? {}))
+      if (setting.rhythm) rhythms.set(id, setting.rhythm);
+    const dailySpending = new Map<string, Map<string, bigint>>();
     for (const t of ordinary.filter((t) => inPeriod(t.date) && !reservedTransactions.has(t.id))) {
       if (
         t.amount > 0 &&
@@ -188,6 +198,12 @@ export function summarizePeriods(
       )
         continue;
       const category = t.categoryId ?? "uncategorized";
+      const rhythm = rhythms.get(category);
+      if (rhythm === "daily" || rhythm === "weekly") {
+        const dates = dailySpending.get(category) ?? new Map<string, bigint>();
+        dates.set(t.date, (dates.get(t.date) ?? 0n) - BigInt(t.amount));
+        dailySpending.set(category, dates);
+      }
       spendingUnits.set(category, (spendingUnits.get(category) ?? 0n) - BigInt(t.amount));
     }
     const spending = Object.fromEntries(
@@ -201,7 +217,39 @@ export function summarizePeriods(
       allocations: plan?.allocations ?? {},
       spending,
     });
+    const pacing = new Map<string, ReturnType<typeof paceCategory>["weeks"]>();
+    const weeks = periodWeeks(start, end);
+    const opening = Object.fromEntries(
+      Object.entries(previousRemaining).map(([id, amount]) => [id, Math.max(0, amount)]),
+    );
+    for (const [id, rhythm] of rhythms) {
+      if (rhythm === "monthly") continue;
+      const setting = plan?.categoryPlans?.[id];
+      const carried = opening[id] ?? 0;
+      const kept = Math.min(carried, setting?.carryIn ?? carried);
+      const funding = balance([kept, plan?.allocations[id] ?? 0]);
+      const paced = paceCategory(
+        weeks,
+        funding,
+        setting,
+        new Map(
+          Array.from(dailySpending.get(id) ?? [], ([date, amount]) => [
+            date,
+            balance([Number(amount)]),
+          ]),
+        ),
+        asOf,
+        rhythm === "daily",
+      );
+      const adjustment = balance([paced.adjustment, kept, -carried]);
+      totals.unassigned = balance([totals.unassigned, -adjustment]);
+      totals.remaining[id] = balance([totals.remaining[id] ?? 0, adjustment]);
+      pacing.set(id, paced.weeks);
+    }
     result = {
+      rhythms: Object.fromEntries(rhythms),
+      pacing: Object.fromEntries(pacing),
+      opening,
       budgetId: budget.id,
       currency: budget.currency,
       month,
@@ -221,7 +269,9 @@ export function summarizePeriods(
       ...totals,
     };
     previousUnassigned = totals.unassigned;
-    previousRemaining = totals.remaining;
+    previousRemaining = { ...totals.remaining };
+    // Future period previews cannot spend funds still committed to an open week.
+    for (const id of pacing.keys()) previousRemaining[id] = Math.min(0, totals.remaining[id] ?? 0);
   }
   return result;
 }

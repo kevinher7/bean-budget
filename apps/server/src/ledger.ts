@@ -1,13 +1,14 @@
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import { SecureRandom } from "effect/crypto/SecureRandom";
 import { SqlClient } from "effect/sql/SqlClient";
-import { balance, monthStart, summarizePeriods } from "@bean-budget/budget";
+import { balance, monthStart, summarizePeriods, tokyoDate } from "@bean-budget/budget";
 import {
   Account,
   Command,
   CommandReceipt,
   NamedRecord,
   SummaryQuery,
+  validCategoryPlans,
   CreateAccount,
   CreateTransaction,
   Transaction,
@@ -220,17 +221,15 @@ const validateBalances = Effect.gen(function* () {
 
 function commandPayload(input: typeof Command.Type): string {
   if (input.type !== "plan") return JSON.stringify(input);
-  return JSON.stringify({
-    ...input,
-    value: {
-      ...input.value,
-      allocations: Object.fromEntries(
-        Object.entries(input.value.allocations).sort(([left], [right]) =>
-          left < right ? -1 : left > right ? 1 : 0,
-        ),
-      ),
-    },
-  });
+  return JSON.stringify(input, (_key, value: unknown) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([left], [right]) =>
+            left < right ? -1 : left > right ? 1 : 0,
+          ),
+        )
+      : value,
+  );
 }
 
 export const command = Effect.fn("Ledger.command")(function* (input: typeof Command.Type) {
@@ -386,10 +385,23 @@ export const command = Effect.fn("Ledger.command")(function* (input: typeof Comm
           for (const id of Object.keys(input.value.allocations))
             yield* requireRecord("category", id);
           const period = input.value;
+          if (!validCategoryPlans(period, budget.startDay))
+            return yield* Effect.fail(
+              new LedgerError(400, "Invalid category planning dates or carryover"),
+            );
           yield* sql`INSERT INTO budget_periods (budgetId,month,incomeForecast,revision) VALUES (${period.budgetId},${period.month},${period.incomeForecast},1) ON CONFLICT(budgetId,month) DO UPDATE SET incomeForecast=excluded.incomeForecast, revision=budget_periods.revision+1`;
           yield* sql`DELETE FROM budget_allocations WHERE budgetId=${period.budgetId} AND month=${period.month}`;
           for (const [categoryId, amount] of Object.entries(period.allocations))
             yield* sql`INSERT INTO budget_allocations VALUES (${period.budgetId},${period.month},${categoryId},${amount})`;
+          if (period.categoryPlans !== undefined) {
+            yield* sql`DELETE FROM budget_category_plans WHERE budgetId=${budget.id} AND month=${period.month}`;
+            for (const [id, setting] of Object.entries(period.categoryPlans)) {
+              yield* requireRecord("category", id);
+              yield* sql`INSERT INTO budget_category_plans VALUES (${budget.id},${period.month},${id},${setting.rhythm ?? null},${setting.carryIn ?? null})`;
+              for (const [start, limit] of Object.entries(setting.limits ?? {}))
+                yield* sql`INSERT INTO budget_week_limits VALUES (${budget.id},${period.month},${id},${start},${limit.fixedFrom},${limit.amount})`;
+            }
+          }
           break;
         }
         case "generate": {
@@ -536,13 +548,20 @@ export const summary = Effect.fn("Ledger.summary")(function* (input: typeof Summ
       const occurrences = yield* readOccurrences({ accountIds: budget.accountIds });
       const plans = yield* readPeriods(budget.id, input.month, budget.firstMonth);
       const reservations = yield* readReservations;
+      const asOf = tokyoDate(yield* Clock.currentTimeMillis);
       return yield* Effect.try({
         try: () => {
-          return summarizePeriods(budget, input.month, history, {
-            occurrences,
-            plans,
-            reservations,
-          });
+          return summarizePeriods(
+            budget,
+            input.month,
+            history,
+            {
+              occurrences,
+              plans,
+              reservations,
+            },
+            asOf,
+          );
         },
         catch: () => new LedgerError(400, "Summary exceeds supported amounts or date range"),
       });

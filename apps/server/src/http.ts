@@ -136,6 +136,7 @@ const routes = addRoutes([
       { method: "POST", path: "/budgets", type: "budget" },
       { method: "POST", path: "/schedules", type: "schedule" },
       { method: "PUT", path: "/budgets/:budgetId/periods/:month", type: "plan" },
+      { method: "PUT", path: "/budgets/:budgetId/periods/:month/category-plan", type: "plan" },
       { method: "PUT", path: "/budgets/:budgetId/reservations/:month", type: "reservation" },
       { method: "POST", path: "/schedules/:scheduleId/occurrences", type: "generate" },
       { method: "PUT", path: "/scheduled-occurrences/:id", type: "occurrence" },
