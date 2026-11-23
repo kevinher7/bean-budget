@@ -932,8 +932,10 @@ function planningPath(command: typeof Command.Type) {
       return "/budgets";
     case "schedule":
       return "/schedules";
-    case "plan":
-      return `/budgets/${command.value.budgetId}/periods/${command.value.month}`;
+    case "plan": {
+      const period = `/budgets/${command.value.budgetId}/periods/${command.value.month}`;
+      return command.value.categoryPlans === undefined ? period : period + "/category-plan";
+    }
     case "reservation":
       return `/budgets/${command.value.budgetId}/reservations/${command.value.month}`;
     case "generate":

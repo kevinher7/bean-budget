@@ -39,7 +39,7 @@ class BackupError extends Data.TaggedError("BackupError")<{ message: string }> {
 const Manifest = Schema.Struct({
   kind: Schema.Literal("bean-budget-server"),
   version: Schema.Literal(1),
-  schemaVersion: Schema.Literals([3, 4, 5, 6]),
+  schemaVersion: Schema.Literals([3, 4, 5, 6, 7]),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   bytes: Schema.Int.check(Schema.isGreaterThan(0)),
 });
@@ -269,7 +269,11 @@ async function validateDatabase(path: string, scratch: string, version?: number)
       .prepare("SELECT max(migration_id) AS version FROM effect_sql_migrations")
       .get()?.version;
     if (
-      (actualVersion !== 3 && actualVersion !== 4 && actualVersion !== 5 && actualVersion !== 6) ||
+      (actualVersion !== 3 &&
+        actualVersion !== 4 &&
+        actualVersion !== 5 &&
+        actualVersion !== 6 &&
+        actualVersion !== 7) ||
       (version !== undefined && actualVersion !== version)
     )
       throw new BackupError({ message: "Unsupported database version" });
@@ -366,7 +370,7 @@ async function main() {
       const manifest = {
         kind: "bean-budget-server",
         version: 1,
-        schemaVersion: 6,
+        schemaVersion: 7,
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
       };

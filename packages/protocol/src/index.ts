@@ -1,5 +1,16 @@
 import { Schema } from "effect";
-import { balance, Currency, FinancialDate, Id, Money, Name } from "@bean-budget/budget";
+import {
+  balance,
+  Currency,
+  FinancialDate,
+  Id,
+  Money,
+  Name,
+  PlanningRhythm,
+  monthStart,
+  nextMonth,
+  periodWeeks,
+} from "@bean-budget/budget";
 
 export const CreateAccount = Schema.Struct({
   operationId: Schema.optional(Id),
@@ -95,13 +106,48 @@ export const Occurrence = Schema.Struct({
   revision: Schema.optional(Revision),
 });
 
+const AllocationAmount = Money.check(Schema.isGreaterThanOrEqualTo(0));
+
+export const CategoryPlans = Schema.Record(
+  Id,
+  Schema.Struct({
+    rhythm: Schema.optional(PlanningRhythm),
+    carryIn: Schema.optional(AllocationAmount),
+    limits: Schema.optional(
+      Schema.Record(
+        FinancialDate,
+        Schema.Struct({ amount: AllocationAmount, fixedFrom: FinancialDate }),
+      ),
+    ),
+  }),
+);
+
 export const BudgetPeriod = Schema.Struct({
   budgetId: Id,
   month: Month,
   allocations: Schema.Record(Id, Money),
+  categoryPlans: Schema.optional(CategoryPlans),
   incomeForecast: Schema.NullOr(Money),
   revision: Schema.optional(Revision),
 });
+
+export function validCategoryPlans(period: typeof BudgetPeriod.Type, startDay: number) {
+  if (!Object.keys(period.categoryPlans ?? {}).length) return true;
+  if (period.month === "9999-12") return false;
+  const weeks = periodWeeks(
+    monthStart(period.month, startDay),
+    monthStart(nextMonth(period.month), startDay),
+  );
+  return Object.values(period.categoryPlans ?? {}).every(
+    (setting) =>
+      (setting.carryIn === undefined ||
+        setting.rhythm === "weekly" ||
+        setting.rhythm === "daily") &&
+      Object.entries(setting.limits ?? {}).every(([start, edit]) =>
+        weeks.some((week) => week.start === start && edit.fixedFrom < week.end),
+      ),
+  );
+}
 
 export const Reservation = Schema.Struct({
   budgetId: Id,
@@ -299,6 +345,10 @@ export function validatePlanning(
     if (
       !budget ||
       period.month < budget.firstMonth ||
+      !validCategoryPlans(period, budget.startDay) ||
+      Object.keys(period.categoryPlans ?? {}).some(
+        (id) => !categories.some((row) => row.id === id),
+      ) ||
       (period.incomeForecast ?? 0) < 0 ||
       !Object.entries(period.allocations).every(
         ([id, amount]) => amount >= 0 && categories.some((row) => row.id === id),
