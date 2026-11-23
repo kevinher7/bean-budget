@@ -77,6 +77,20 @@ If no token file exists yet, run `npm run up` first. Compose requires a nonempty
 
 The image uses Node 22, runs as its non-root `node` user, and launches the Effect server directly with the existing tsx loader. It includes the root development dependencies because tsx currently lives there. Source is copied into the image; rerun `npm run up` after edits. Prefer `npm run dev:server` for automatic reload. The build includes only the server and shared budget/protocol packages; future mobile dependencies are outside its workspace install. There is no web service yet, and the Android emulator and Metro remain host processes.
 
+## Nix package
+
+`nix/flake.nix` exposes the server as `packages.<system>.server` (also `default`) for x86_64-linux, aarch64-linux and aarch64-darwin. Like the Compose image, it installs only the server and the shared budget/protocol workspaces and runs the TypeScript source through tsx. It has two programs:
+
+- `bean-budget-server` runs the server with the environment settings above. Set `BEAN_DATABASE` to an absolute path, because the default is relative to the working directory.
+- `bean-budget-backup` takes the same `export`, `verify` and `restore` arguments as `npm run server:backup`.
+
+```sh
+nix build 'git+file:.?dir=nix#server'
+BEAN_TOKEN=... BEAN_DATABASE=/var/lib/bean-budget/bean-budget.sqlite ./result/bin/bean-budget-server
+```
+
+Other flakes reference it as `github:kevinher7/bean-budget?dir=nix`. After changing `package-lock.json`, update `npmDepsHash` in the flake. Set it to `lib.fakeHash`, build, and copy the hash Nix reports.
+
 ## Ledger and tracking-budget foundation
 
 Migration 2 (`002_tracking.ts`) upgrades existing/legacy ledgers without modifying migration 1 or receipts. Existing accounts remain JPY; transactions become posted/manual with revision zero. New account requests accept optional `currency` (`JPY` default, or `USD`). Integers represent whole JPY or USD cents; shared `parseMoney` parses decimal text without floating-point multiplication. Account responses include posted `balance` and `projectedBalance` including pending entries. The same ±1,000,000,000,000 bound applies to both balances.
