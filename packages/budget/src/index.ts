@@ -138,7 +138,6 @@ export function summarizePeriods(
     }[];
   },
   asOf: string,
-  includeCalendar = false,
 ) {
   const rhythms = new Map<string, Rhythm>();
   const selections = state.reservations
@@ -219,7 +218,6 @@ export function summarizePeriods(
       spending,
     });
     const pacing = new Map<string, ReturnType<typeof paceCategory>["weeks"]>();
-    const calendars = new Map<string, NonNullable<ReturnType<typeof paceCategory>["calendar"]>>();
     const weeks = periodWeeks(start, end);
     const opening = Object.fromEntries(
       Object.entries(previousRemaining).map(([id, amount]) => [id, Math.max(0, amount)]),
@@ -242,18 +240,13 @@ export function summarizePeriods(
         ),
         asOf,
         rhythm === "daily",
-        includeCalendar && month === targetMonth,
       );
       const adjustment = balance([paced.adjustment, kept, -carried]);
       totals.unassigned = balance([totals.unassigned, -adjustment]);
       totals.remaining[id] = balance([totals.remaining[id] ?? 0, adjustment]);
       pacing.set(id, paced.weeks);
-      if (paced.calendar) calendars.set(id, paced.calendar);
     }
     result = {
-      ...(includeCalendar && month === targetMonth
-        ? { calendars: Object.fromEntries(calendars) }
-        : {}),
       rhythms: Object.fromEntries(rhythms),
       pacing: Object.fromEntries(pacing),
       opening,

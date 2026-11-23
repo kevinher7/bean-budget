@@ -1,8 +1,8 @@
 <resources>
-  <string name="bean_widget_spending_name">Category spending</string>
-  <string name="bean_widget_spending_wide_name">Category spending wide</string>
-  <string name="bean_widget_spending_description">Daily and weekly money left in one budget category.</string>
-  <string name="bean_widget_choose">Choose a category</string>
+  <string name="bean_widget_spending_name">Budget spending</string>
+  <string name="bean_widget_spending_wide_name">Budget spending wide</string>
+  <string name="bean_widget_spending_description">Total spent today and this week across your budget.</string>
+  <string name="bean_widget_choose">Choose a budget</string>
   <string name="bean_widget_today">TODAY</string>
   <string name="bean_widget_week">WEEK</string>
   <string name="bean_widget_register_name">Bean balances</string>

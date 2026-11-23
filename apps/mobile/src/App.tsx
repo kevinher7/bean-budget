@@ -68,13 +68,10 @@ export default function App() {
   const operationInProgress = useRef(true);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const [syncRequest, setSyncRequest] = useState<"automatic" | "manual">();
-  const [widgetRoute, setWidgetRoute] = useState<
-    "entry" | "register" | { budget: string; category: string }
-  >();
+  const [widgetRoute, setWidgetRoute] = useState<"entry" | "register" | { budget: string }>();
   const budgetDraft = useRef(false);
   const [widgetBudget, setWidgetBudget] = useState<{
     budget: string;
-    category: string;
     visit: number;
   }>();
   const [error, setError] = useState("");
@@ -179,10 +176,10 @@ export default function App() {
     function openWidgetUrl(url: string | null | undefined) {
       const route = widgets?.takeBudgetShortcut?.() ?? url?.split("://")[1];
       if (route === "entry" || route === "register") setWidgetRoute(route);
-      else if (route === "budget") setWidgetRoute({ budget: "", category: "" });
+      else if (route === "budget") setWidgetRoute({ budget: "" });
       else {
-        const match = /^budget\/([A-Za-z0-9_-]{1,100})\/([A-Za-z0-9_-]{1,100})$/.exec(route ?? "");
-        if (match?.[1] && match[2]) setWidgetRoute({ budget: match[1], category: match[2] });
+        const match = /^budget\/([A-Za-z0-9_-]{1,100})$/.exec(route ?? "");
+        if (match?.[1]) setWidgetRoute({ budget: match[1] });
       }
     }
     Linking.getInitialURL().then(openWidgetUrl, () =>
@@ -198,10 +195,8 @@ export default function App() {
     if (typeof widgetRoute === "object") {
       if ((screen !== "register" && screen !== "budget") || budgetDraft.current) return;
       const budget = ledger.planning.budgets.find((row) => row.id === widgetRoute.budget);
-      const category = ledger.categories.find((row) => row.id === widgetRoute.category);
       setWidgetBudget((previous) => ({
         budget: budget?.id ?? "",
-        category: budget && category ? category.id : "",
         visit: (previous?.visit ?? 0) + 1,
       }));
       setScreen("budget");

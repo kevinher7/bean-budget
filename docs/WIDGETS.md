@@ -1,19 +1,19 @@
 # Android widgets
 
-Bean Budget includes two category spending widgets, a quick-add shortcut and a live balance widget.
+Bean Budget includes two budget spending widgets, a quick-add shortcut and a live balance widget.
 
-| Widget                 | Size                               | Data                                                                     |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
-| Category spending      | 2 by 2 target cells                | One category's money left today and this week                            |
-| Category spending wide | 4 by 1 target cells                | The same amounts with horizontal spending bars                           |
-| Add transaction        | 1 target cell, minimum 40 by 40 dp | Opens transaction entry or account creation                              |
-| Bean balances          | Minimum 180 by 180 dp, resizable   | Posted and projected totals across local accounts, separated by currency |
+| Widget               | Size                               | Data                                                                     |
+| -------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| Budget spending      | 2 by 2 target cells                | Net spending today and since Monday across the selected budget           |
+| Budget spending wide | 4 by 1 target cells                | Net daily spending with the weekly total alongside it                    |
+| Add transaction      | 1 target cell, minimum 40 by 40 dp | Opens transaction entry or account creation                              |
+| Bean balances        | Minimum 180 by 180 dp, resizable   | Posted and projected totals across local accounts, separated by currency |
 
-## Choose a category
+## Choose a budget
 
-Add a spending widget and tap **Choose a category**. Each widget keeps its own budget and category. Daily categories show TODAY and WEEK. Weekly categories show WEEK. A configured widget opens its category in Budget. With a form open, the app preserves the draft. Use the launcher's reconfigure action to change an existing selection. If a category no longer has a paced plan, tap the widget to choose another.
+Choose a budget when placing a widget. A single available budget is selected automatically. Both sizes show **Spent today** across the budget's accounts and the week-to-date total since Monday. The Tokyo date and budget name appear below the amounts. Tapping opens the budget overview.
 
-Filled segments show spending against the allowance. Lighter weekly segments indicate the fraction of the clipped week elapsed. The widget shows its Tokyo financial date. When the app last calculated the plan on an earlier date, the footer also shows that date.
+Pending and posted purchases count once, including uncategorized purchases and actual bill payments. Categorized refunds reduce spending on the refund date. Income, transfers, opening balances, and scheduled estimates are excluded. Category allocations and planning rhythms have no effect on these totals.
 
 ## Storage and lifecycle
 
@@ -25,17 +25,15 @@ The live balance renderer uses Android's SQLite JSON functions and Java time API
 
 Mobile schema 4 adds triggers on local records and outbox changes to record `widgetUpdatedAt` within the financial transaction. Successful synchronization records `lastSyncedAt` with its final snapshot merge. Restore clears the previous sync time and records a new local update time. The widget labels timestamps in Asia/Tokyo and does not imply that an idle app synchronizes in the background. Android's 30-minute provider interval is best effort under power restrictions.
 
-Mobile SQLite schema 6 adds a rebuildable table of category weeks. During a register read the app uses the shared budget calculation to publish the current and following budget periods, including dated daily allowances and queued offline edits. Changes to the underlying records, outbox, planning or deferred receipts invalidate the previous result in the same write transaction. A failed planning operation or deferred transaction hides availability for affected budgets.
+Schema 7 stores each budget's projected account membership and linked income transaction IDs in local metadata. Record, outbox, planning, server binding and deferred receipt changes invalidate this metadata in the same transaction. Register reads republish it, including after restore. A missing scope or an incomplete budget shows a setup or refresh prompt.
 
-The Android provider opens the database read-only, selects the active Tokyo week and reads that date's allowance. A midnight alarm, date and clock change broadcasts, and Android's periodic widget update request a redraw while the app is closed. Android may delay alarms under power restrictions. The visible financial date identifies the displayed numbers. Beyond the two cached periods the widget prompts the user to reopen the app. Restore rebuilds the table from the restored ledger. Mobile exports omit widget projections and launcher selections.
-
-Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Older app binaries reject schema 6. A verified mobile export can restore the underlying ledger independently of the projection table.
+The native provider sums register transactions for the current Tokyo date and Monday through today in one SQLite query. Midnight alarms, clock changes, and periodic widget updates trigger redraws without a running JavaScript bundle. Android may delay alarms under power restrictions. Each widget displays its financial date. Widget refresh failures do not roll back financial changes. Older binaries reject schema 7. Mobile exports retain the underlying ledger and omit the widget metadata and launcher selections.
 
 `apps/mobile/modules/bean-widgets/with-widgets.ts` generates native color resources from `src/ui/theme.ts` during Expo prebuild. Generated Android projects stay ignored. The palette keep rule retains colors selected dynamically under release resource shrinking.
 
 ## Verification
 
-The spending widgets were exercised at 160 by 160 dp and 320 by 80 dp in an actual Android AppWidgetHost on an isolated API 37 emulator with synthetic data. A square widget tracked a daily Conbini plan while a wide widget tracked weekly groceries. A ¥400 bank-pending purchase entered with the server stopped moved TODAY from ¥886 to ¥486 and WEEK from ¥8,600 to ¥8,200. Posting and synchronizing kept both amounts. Groceries retained its own ¥3,500 weekly limit. After the app process was killed, the native midnight update changed TODAY to ¥1,367 and kept WEEK at ¥8,200. Moving the emulator clock past the following budget period replaced the amounts with a refresh prompt. Restoring an empty mobile backup cleared both widget amounts. Restoring the recovery copy rebuilt both budgets and their independent spending figures.
+Both widget sizes showed ¥2,250 on an API 37 emulator for ¥800 in Conbini purchases, ¥1,250 in groceries, an uncategorized ¥300 purchase and a ¥100 refund. A ¥5,000 income entry and a ¥750 purchase in another budget did not affect the total. Advancing the emulator clock to the next Tokyo day while the app was closed changed today to ¥0 and kept this week at ¥2,250.
 
 Earlier live-balance and quick-add verification on API 37 covered the following cases.
 

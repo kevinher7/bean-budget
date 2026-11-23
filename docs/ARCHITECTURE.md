@@ -142,7 +142,7 @@ Android widgets render the latest committed local summary immediately, with an u
 
 Android widget providers open the existing SQLite database read-only and query a single committed snapshot. They never initialize or migrate the database, start JavaScript or perform network work. The app requests a redraw after reading the register following a mutation, sync or restore. Validate real-device cold starts and overlapping writes on the Pixel after emulator verification. Backend imports become visible after the device receives and applies changes; immediate background delivery is not guaranteed while the operating system suspends the app.
 
-The app derives a dated spending calendar from shared period calculations and commits it in mobile SQLite. Each square or wide spending widget reads the selected category for the current Tokyo date. The native provider redraws on date changes without starting the app.
+The app publishes projected budget account membership and linked income transaction IDs to local SQLite. The spending widgets sum actual register entries for the Tokyo financial date and week, including pending purchases. Android redraws them on date changes while the app is closed.
 
 ## Trust and operations
 

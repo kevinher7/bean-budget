@@ -34,20 +34,20 @@ class SpendingWidgetConfiguration : Activity() {
       val choices = runCatching { spendingToday(this, LocalDate.now(ZoneId.of("Asia/Tokyo"))) }.getOrDefault(emptyList())
       runOnUiThread {
         if (isFinishing || isDestroyed) return@runOnUiThread
-        val dialog = AlertDialog.Builder(this).setTitle("Choose a category")
+        val dialog = AlertDialog.Builder(this).setTitle("Choose a budget")
           .setNegativeButton("Cancel") { _, _ -> finish() }.setOnCancelListener { finish() }
         if (choices.isEmpty()) {
-          dialog.setMessage("Open Bean Budget to refresh your weekly and daily category plans.")
+          dialog.setMessage("Open Bean Budget to refresh your budgets.")
             .setPositiveButton("Open budget") { _, _ ->
               BeanWidgets.openApp(this, "budget").send()
               finish()
             }
         } else {
-          val labels = choices.map { "${it.budgetName} · ${it.name}" }.toTypedArray()
+          val labels = choices.map { "${it.name} · ${it.currency}" }.toTypedArray()
           dialog.setItems(labels) { _, index ->
             val row = choices[index]
             getSharedPreferences(widgetPreferences, MODE_PRIVATE).edit()
-              .putString("budget/$id", row.budget).putString("category/$id", row.category)
+              .putString("budget/$id", row.id).remove("category/$id")
               .putString("server/$id", row.server).apply()
             widgetUpdates.execute { BeanWidgets.refresh(applicationContext) }
             setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))

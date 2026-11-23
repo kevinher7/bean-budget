@@ -18,7 +18,7 @@ The Backup screen exports the complete local register, planning inputs, accepted
 
 ## Android widgets
 
-Add Bean Budget widgets from the Android launcher's widget picker. Quick add opens a new expense entry, or account creation when the register is empty. Register summary opens the register and resizes between compact and wide layouts. Category spending and Category spending wide each track one budget category. Choose a daily category for TODAY and WEEK or a weekly category for WEEK. Tap a configured widget to open its category. The plus-only quick-add tile and all summaries use the app's bean color tokens. The register and entry screens keep their existing layout.
+Add Bean Budget widgets from the Android launcher's widget picker. Quick add opens a new expense entry, or account creation when the register is empty. Register summary opens the register and resizes between compact and wide layouts. Budget spending and Budget spending wide show net spending today and since Monday across the selected budget’s accounts. Each widget opens its budget overview. The plus-only quick-add tile and all summaries use the app's bean color tokens. The register and entry screens keep their existing layout.
 
 The summary shows posted and projected balances separately for each currency across local accounts. It never combines JPY and USD or presents a ledger balance as a spending allowance. Bank-pending entries affect projected balances. Waiting and failed operation counts describe synchronization separately.
 
@@ -50,7 +50,7 @@ All planning edits persist with ordered outbox operations. Local summaries use s
 
 During unresolved transaction receipt reconciliation, incoming account transactions may remain deferred. The app preserves those snapshot rows in exports and hides affected budget availability until synchronization finishes. It does not calculate carryover from an incomplete ledger. Failed planning operations also hide availability until recovery. Exports retain conflicting provisional payments even when the accepted estimate has changed.
 
-Mobile schema 5 and backup format 2 include planning state, deferred snapshot transactions and planning operations. Format-1 exports still import with empty planning state. Schema 6 adds the spending widget calendar. Older binaries cannot open that database. Export a recovery copy before updating.
+Mobile schema 5 and backup format 2 include planning state, deferred snapshot transactions and planning operations. Format-1 exports still import with empty planning state. Schema 7 stores the account scope used by spending widgets. Older binaries cannot open that database. Export a recovery copy before updating.
 
 While the app is active, it requests synchronization on foreground entry,
 WebSocket connection, ledger change hints, and once per minute. Sync now uses

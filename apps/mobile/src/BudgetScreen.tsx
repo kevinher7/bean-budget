@@ -101,7 +101,7 @@ export function BudgetScreen({
   error,
 }: {
   draftGuard: RefObject<boolean>;
-  widgetBudget?: { budget: string; category: string } | undefined;
+  widgetBudget?: { budget: string } | undefined;
   ledger: Ledger;
   error: string;
   busy: boolean;
@@ -115,10 +115,6 @@ export function BudgetScreen({
     widgetBudget?.budget || ledger.planning.budgets[0]?.id || "",
   );
   const [month, setMonth] = useState("");
-  const [initialCategory, setInitialCategory] = useState(widgetBudget?.category);
-  useEffect(() => {
-    setInitialCategory(undefined);
-  }, []);
   const [tools, setTools] = useState<"settings" | "create" | "schedules">();
   const budget =
     ledger.planning.budgets.find((row) => row.id === selected) ?? ledger.planning.budgets[0];
@@ -233,7 +229,6 @@ export function BudgetScreen({
             />
           </View>
           <Period
-            initialCategory={initialCategory}
             draftGuard={draftGuard}
             key={budget.id + "/" + target}
             ledger={ledger}
@@ -592,7 +587,6 @@ type PeriodPanel =
 
 function Period({
   draftGuard,
-  initialCategory,
   ledger,
   budget,
   month,
@@ -603,7 +597,6 @@ function Period({
   createCategory,
 }: {
   draftGuard: RefObject<boolean>;
-  initialCategory?: string | undefined;
   ledger: Ledger;
   budget: typeof Budget.Type;
   month: string;
@@ -613,9 +606,7 @@ function Period({
   save: Save;
   createCategory: (name: string) => void;
 }) {
-  const [panel, setPanel] = useState<PeriodPanel | undefined>(() =>
-    initialCategory ? { kind: "category", id: initialCategory } : undefined,
-  );
+  const [panel, setPanel] = useState<PeriodPanel>();
   const close = () => setPanel(undefined);
   const currency = budget.currency;
   let summary: ReturnType<typeof periodSummary>;
