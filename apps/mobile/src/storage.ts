@@ -1,6 +1,13 @@
 import { Data, Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { balance, parseMoney, Currency } from "@bean-budget/budget";
+import {
+  balance,
+  parseMoney,
+  Currency,
+  monthStart,
+  nextMonth,
+  tokyoDate,
+} from "@bean-budget/budget";
 import {
   Account,
   Command,
@@ -20,6 +27,7 @@ import { randomUUID } from "expo-crypto";
 import {
   emptyPlanning,
   planningKey,
+  periodSummary,
   planningCommands,
   projectPlanning,
   type PlanningCommand,
@@ -101,7 +109,7 @@ const initializeDatabase = Effect.try({
       const version = database.getFirstSync<{ user_version: number }>(
         "PRAGMA user_version",
       )?.user_version;
-      if (version === 3 || version === 4 || version === 5) return;
+      if (version === 3 || version === 4 || version === 5 || version === 6) return;
       if (version === 2) {
         database.execSync(
           "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
@@ -166,7 +174,20 @@ const initializeDatabase = Effect.try({
           database.execSync(
             `CREATE TRIGGER IF NOT EXISTS widget_${table}_${action.toLowerCase()} AFTER ${action} ON ${table} BEGIN INSERT INTO metadata(name,value) VALUES('widgetUpdatedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value; END;`,
           );
-      database.execSync("PRAGMA user_version=5;");
+      database.execSync(`CREATE TABLE IF NOT EXISTS spending_widget_weeks(
+        budgetId TEXT NOT NULL, categoryId TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL,
+        budgetName TEXT NOT NULL, categoryName TEXT NOT NULL, currency TEXT NOT NULL,
+        weekLimit INTEGER NOT NULL, spent INTEGER NOT NULL, daily TEXT,
+        PRIMARY KEY(budgetId,categoryId,start)
+      );`);
+      for (const action of ["INSERT", "UPDATE", "DELETE"]) {
+        const source = action === "DELETE" ? "OLD" : "NEW";
+        database.execSync(`CREATE TRIGGER IF NOT EXISTS invalidate_widget_calendar_${action.toLowerCase()}
+          AFTER ${action} ON metadata
+          WHEN ${source}.name IN ('widgetUpdatedAt','planning','deferredTransactions','serverUrl')
+          BEGIN DELETE FROM metadata WHERE name='widgetCalendarDate'; END;`);
+      }
+      database.execSync("PRAGMA user_version=6;");
     });
   },
   catch: (cause) => new LocalStorageError({ message: "Could not open local ledger", cause }),
@@ -332,6 +353,89 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
   return yield* loadLedger();
 });
 
+function publishSpendingCalendar(ledger: {
+  planning: typeof Planning.Type;
+  transactions: readonly (typeof Transaction.Type)[];
+  categories: readonly (typeof NamedRecord.Type)[];
+  planningConflict: boolean;
+  deferredTransactions: readonly (typeof Transaction.Type)[];
+}) {
+  const today = tokyoDate(Date.now());
+  if (
+    database.getFirstSync<{ value: string }>(
+      "SELECT value FROM metadata WHERE name='widgetCalendarDate'",
+    )?.value === today
+  )
+    return;
+  database.withTransactionSync(() => {
+    database.execSync("DELETE FROM spending_widget_weeks");
+    const names = new Map(ledger.categories.map((category) => [category.id, category.name]));
+    for (const budget of ledger.planning.budgets) {
+      if (
+        ledger.planningConflict ||
+        ledger.deferredTransactions.some((row) => budget.accountIds.includes(row.accountId)) ||
+        !ledger.planning.periods.some(
+          (period) =>
+            period.budgetId === budget.id &&
+            Object.values(period.categoryPlans ?? {}).some(
+              (plan) => plan.rhythm === "weekly" || plan.rhythm === "daily",
+            ),
+        )
+      )
+        continue;
+      let month = today.slice(0, 7);
+      if (today < monthStart(month, budget.startDay)) {
+        const first = new Date(month + "-01T00:00:00Z");
+        first.setUTCMonth(first.getUTCMonth() - 1);
+        month = first.toISOString().slice(0, 7);
+      }
+      for (const target of [month, nextMonth(month)]) {
+        if (target < budget.firstMonth) continue;
+        // Closing the period in order gives each week the limit it will have when that week begins.
+        const end = monthStart(nextMonth(target), budget.startDay);
+        let summary;
+        try {
+          summary = periodSummary(
+            ledger.planning,
+            budget.id,
+            target,
+            ledger.transactions,
+            end,
+            true,
+          );
+        } catch (error) {
+          if (error instanceof RangeError) continue;
+          throw error;
+        }
+        for (const [id, weeks] of Object.entries(summary?.calendars ?? {})) {
+          const name = names.get(id);
+          if (!name) continue;
+          for (const week of weeks) {
+            if (week.end <= today) continue;
+            database.runSync(
+              "INSERT INTO spending_widget_weeks VALUES (?,?,?,?,?,?,?,?,?,?)",
+              budget.id,
+              id,
+              week.start,
+              week.end,
+              budget.name,
+              name,
+              budget.currency,
+              week.limit,
+              week.spent,
+              week.daily === null ? null : JSON.stringify(week.daily),
+            );
+          }
+        }
+      }
+    }
+    database.runSync(
+      "INSERT OR REPLACE INTO metadata(name,value) VALUES ('widgetCalendarDate',?)",
+      today,
+    );
+  });
+}
+
 export const loadLedger = Effect.fn("loadLedger")(function* () {
   const ledger = yield* Effect.try({
     try: () => {
@@ -378,7 +482,7 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
       const linked = planning.occurrences.flatMap((row) =>
         row.transactionId ? [row.transactionId] : [],
       );
-      return {
+      const state = {
         accounts,
         transactions,
         planningConflict:
@@ -392,6 +496,13 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
         deferredTransactions: deferredTransactions(),
         planningOperations: queued.filter((row) => row.kind === "planning"),
       };
+      let calendarFailed = false;
+      try {
+        publishSpendingCalendar(state);
+      } catch {
+        calendarFailed = true;
+      }
+      return { ...state, calendarFailed };
     },
     catch: (cause) => new LocalStorageError({ message: "Could not read local ledger", cause }),
   });
@@ -399,7 +510,7 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
   return {
     ...ledger,
     widgetWarning:
-      widgets._tag === "Failure"
+      ledger.calendarFailed || widgets._tag === "Failure"
         ? "Your register is saved. Widgets could not refresh. Reopen the app to retry."
         : null,
   };

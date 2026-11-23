@@ -132,6 +132,7 @@ export function periodSummary(
   month: string,
   transactions: readonly (typeof Transaction.Type)[],
   asOf = tokyoDate(Date.now()),
+  includeCalendar = false,
 ) {
   const budget = state.budgets.find((row) => row.id === budgetId);
   if (!budget || month < budget.firstMonth) throw new Error("Select a period within this budget");
@@ -141,6 +142,7 @@ export function periodSummary(
     transactions.filter((row) => budget.accountIds.includes(row.accountId)),
     { plans: state.periods, occurrences: state.occurrences, reservations: state.reservations },
     asOf,
+    includeCalendar,
   );
 }
 

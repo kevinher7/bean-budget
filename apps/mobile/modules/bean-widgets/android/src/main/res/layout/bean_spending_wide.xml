@@ -11,11 +11,24 @@
     android:paddingEnd="16dp"
     android:paddingTop="4dp"
     android:paddingBottom="4dp">
+    <TextView
+      android:id="@+id/bean_spending_category"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:text="@string/bean_widget_choose"
+      android:textColor="@color/bean_widget_text"
+      android:textSize="13sp"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:textStyle="bold" />
     <FrameLayout
       android:layout_width="match_parent"
       android:layout_height="0dp"
       android:layout_weight="1" />
     <LinearLayout
+      android:id="@+id/bean_spending_today_row"
+      android:visibility="gone"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:gravity="center_vertical"
@@ -53,6 +66,8 @@
       android:layout_height="0dp"
       android:layout_weight="1" />
     <LinearLayout
+      android:id="@+id/bean_spending_week_row"
+      android:visibility="gone"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:gravity="center_vertical"
@@ -89,15 +104,14 @@
       android:layout_width="match_parent"
       android:layout_height="0dp"
       android:layout_weight="1" />
+    <TextView
+      android:id="@+id/bean_spending_status"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:ellipsize="end"
+      android:maxLines="2"
+      android:textColor="@color/bean_widget_secondary"
+      android:textSize="10sp" />
   </LinearLayout>
-  <TextView
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:layout_gravity="top|end"
-    android:layout_marginTop="2dp"
-    android:layout_marginEnd="12dp"
-    android:includeFontPadding="false"
-    android:text="@string/bean_widget_demo"
-    android:textColor="@color/bean_widget_secondary"
-    android:textSize="8sp" />
 </FrameLayout>

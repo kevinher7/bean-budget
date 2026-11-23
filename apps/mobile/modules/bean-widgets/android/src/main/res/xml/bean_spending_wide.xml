@@ -7,5 +7,7 @@
   android:previewLayout="@layout/bean_spending_wide"
   android:description="@string/bean_widget_spending_description"
   android:resizeMode="none"
-  android:updatePeriodMillis="0"
+  android:configure="app.beanbudget.widgets.SpendingWidgetConfiguration"
+  android:widgetFeatures="reconfigurable|configuration_optional"
+  android:updatePeriodMillis="1800000"
   android:widgetCategory="home_screen" />

@@ -21,7 +21,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.Executors
 
-private val widgetUpdates = Executors.newSingleThreadExecutor()
+internal val widgetUpdates = Executors.newSingleThreadExecutor()
 
 private data class CurrencyBalance(val currency: String, val posted: Long, val projected: Long)
 
@@ -54,7 +54,7 @@ object BeanWidgets {
     val file = File(context.filesDir, "SQLite/bean-budget.sqlite")
     if (!file.isFile) return RegisterSummary(emptyList(), 0, 0, null, null)
     SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { database ->
-      require(database.version in 3..5) { "Open the app to update local storage" }
+      require(database.version in 3..6) { "Open the app to update local storage" }
       val balances = mutableListOf<CurrencyBalance>()
       var waiting = 0
       var failed = 0
@@ -174,7 +174,7 @@ object BeanWidgets {
     views.setContentDescription(projected, "${balance.currency} $projectedText including bank-pending entries")
   }
 
-  private fun money(units: Long, currency: String): String {
+  fun money(units: Long, currency: String): String {
     val amount = BigDecimal.valueOf(units, if (currency == "USD") 2 else 0)
     val formatter = NumberFormat.getNumberInstance(Locale.US)
     formatter.minimumFractionDigits = if (currency == "USD") 2 else 0
@@ -190,16 +190,25 @@ object BeanWidgets {
     context.resources.getIdentifier("bean_widget_$name", "color", context.packageName)
   )
 
-  fun openApp(context: Context, destination: String): PendingIntent {
+  fun appIntent(context: Context, destination: String): Intent {
     val scheme = when (context.packageName) {
       "app.beanbudget.dev" -> "bean-budget-dev"
       "app.beanbudget.probe" -> "bean-budget-probe"
       else -> "bean-budget"
     }
-    val intent = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
+    return requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
       .setAction(Intent.ACTION_VIEW)
       .setData(Uri.parse("$scheme://$destination"))
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+  }
+
+  fun openApp(context: Context, destination: String): PendingIntent {
+    val intent = appIntent(context, destination)
+    if (destination == "budget" || destination.startsWith("budget/")) {
+      intent.setClass(context, SpendingShortcutActivity::class.java)
+      // CLEAR_TOP on the intermediary would remove the open form underneath it.
+      intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
     return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   }
 }
@@ -211,7 +220,7 @@ open class BeanWidgetProvider : AppWidgetProvider() {
 
   override fun onEnabled(context: Context) = update(context)
 
-  private fun update(context: Context) {
+  protected fun update(context: Context) {
     val pending = goAsync()
     widgetUpdates.execute {
       try {

@@ -1,23 +1,19 @@
 # Android widgets
 
-Bean Budget includes Spend Bean's square and wide TODAY/WEEK spending designs with fixed demo inputs, plus its plus-only quick-add tile. All use Bean Budget's bean palette. A separate live balance widget reads the local register.
+Bean Budget includes two category spending widgets, a quick-add shortcut and a live balance widget.
 
-| Widget             | Size                                       | Data                                                                                  |
-| ------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Spending demo      | 2 by 2 target cells, 160 by 160 dp preview | Fixed TODAY/WEEK allotments and spending, ten-segment bars and a visible DEMO marker  |
-| Spending demo wide | 4 by 1 target cells, 320 by 80 dp preview  | The same fixed values arranged in shallow horizontal label/bar/amount rows            |
-| Add transaction    | 1 target cell, minimum 40 by 40 dp         | Plus-only shortcut opens transaction entry, or account creation for an empty register |
-| Bean balances      | Minimum 180 by 180 dp, resizable           | Live posted/projected totals across local accounts, separated by JPY and USD          |
+| Widget                 | Size                               | Data                                                                     |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| Category spending      | 2 by 2 target cells                | One category's money left today and this week                            |
+| Category spending wide | 4 by 1 target cells                | The same amounts with horizontal spending bars                           |
+| Add transaction        | 1 target cell, minimum 40 by 40 dp | Opens transaction entry or account creation                              |
+| Bean balances          | Minimum 180 by 180 dp, resizable   | Posted and projected totals across local accounts, separated by currency |
 
-Launcher cell dimensions vary. Shortcuts resume an active app form without discarding its contents and wait for an in-progress action to finish.
+## Choose a category
 
-## Spending design previews
+Add a spending widget and tap **Choose a category**. Each widget keeps its own budget and category. Daily categories show TODAY and WEEK. Weekly categories show WEEK. A configured widget opens its category in Budget. With a form open, the app preserves the draft. Use the launcher's reconfigure action to change an existing selection. If a category no longer has a paced plan, tap the widget to choose another.
 
-`SpendingWidgets.kt` holds one explicit set of hardcoded demo inputs copied from Spend Bean's preview. TODAY has 3,200 yen allotted and 1,850 spent, leaving 1,350 yen. WEEK has 22,400 yen allotted and 9,100 spent, leaving 13,300 yen. Weekly pace is three sevenths.
-
-The square widget places each label and remaining amount above a segmented bar. The wide widget places label, bar and amount in each horizontal row. Filled segments show the spent fraction. The weekly bar uses the lighter selected color through the elapsed pace; spending beyond the allotment or weekly pace uses the error color. The quick-add tile has only a centered plus and 16 dp corners, matching Spend Bean's composition.
-
-The spending widgets are design previews. Their picker labels and visible DEMO marker identify the fixed values. They do not read or write ledger records, pretend to synchronize, or display a fabricated update time. Connecting real budget inputs is separate work. The live balance widget remains available for actual ledger data.
+Filled segments show spending against the allowance. Lighter weekly segments indicate the fraction of the clipped week elapsed. The widget shows its Tokyo financial date. When the app last calculated the plan on an earlier date, the footer also shows that date.
 
 ## Storage and lifecycle
 
@@ -29,15 +25,19 @@ The live balance renderer uses Android's SQLite JSON functions and Java time API
 
 Mobile schema 4 adds triggers on local records and outbox changes to record `widgetUpdatedAt` within the financial transaction. Successful synchronization records `lastSyncedAt` with its final snapshot merge. Restore clears the previous sync time and records a new local update time. The widget labels timestamps in Asia/Tokyo and does not imply that an idle app synchronizes in the background. Android's 30-minute provider interval is best effort under power restrictions.
 
-Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Backup formats 1 and 2 exclude these operational timestamps. Format-1 exports remain importable. Schema 5 adds mobile planning and native balance-widget compatibility without changing its ledger query. Older application binaries reject schema 5; retain a verified mobile export before updating.
+Mobile SQLite schema 6 adds a rebuildable table of category weeks. During a register read the app uses the shared budget calculation to publish the current and following budget periods, including dated daily allowances and queued offline edits. Changes to the underlying records, outbox, planning or deferred receipts invalidate the previous result in the same write transaction. A failed planning operation or deferred transaction hides availability for affected budgets.
+
+The Android provider opens the database read-only, selects the active Tokyo week and reads that date's allowance. A midnight alarm, date and clock change broadcasts, and Android's periodic widget update request a redraw while the app is closed. Android may delay alarms under power restrictions. The visible financial date identifies the displayed numbers. Beyond the two cached periods the widget prompts the user to reopen the app. Restore rebuilds the table from the restored ledger. Mobile exports omit widget projections and launcher selections.
+
+Widget refresh failure does not fail a committed financial action. The app reports a widget warning and retries on the next register read. Older app binaries reject schema 6. A verified mobile export can restore the underlying ledger independently of the projection table.
 
 `apps/mobile/modules/bean-widgets/with-widgets.ts` generates native color resources from `src/ui/theme.ts` during Expo prebuild. Generated Android projects stay ignored. The palette keep rule retains colors selected dynamically under release resource shrinking.
 
 ## Verification
 
-Runtime evidence uses synthetic data in the isolated `app.beanbudget.probe` package on a separate temporary API 37 ARM64 emulator, configured at 1080 by 2424 pixels and density 420. The probe APK embeds Hermes JavaScript and uses a temporary synthetic signing key. It does not depend on Metro. The existing Bean Budget emulator, launcher and apps remain untouched.
+The spending widgets were exercised at 160 by 160 dp and 320 by 80 dp in an actual Android AppWidgetHost on an isolated API 37 emulator with synthetic data. A square widget tracked a daily Conbini plan while a wide widget tracked weekly groceries. A ¥400 bank-pending purchase entered with the server stopped moved TODAY from ¥886 to ¥486 and WEEK from ¥8,600 to ¥8,200. Posting and synchronizing kept both amounts. Groceries retained its own ¥3,500 weekly limit. After the app process was killed, the native midnight update changed TODAY to ¥1,367 and kept WEEK at ¥8,200. Moving the emulator clock past the following budget period replaced the amounts with a refresh prompt. Restoring an empty mobile backup cleared both widget amounts. Restoring the recovery copy rebuilt both budgets and their independent spending figures.
 
-Screenshots captured through a temporary Android `AppWidgetHost` show the provider's actual `RemoteViews` at exact dp sizes, not React previews or mockups. Spending captures use 160 by 160 dp and 320 by 80 dp, matching Spend Bean's own preview frames. The plus-only tile uses 72 by 72 dp. The Pixel Launcher also displays the default 2 by 2, 4 by 1 and 1 by 1 placements without resizing. The DEMO marker remains visible in all spending frames. The spending demos also rendered offline after process death with no React Native JavaScript logs. Tapping a spending card opened the register; tapping plus opened transaction entry. The following live-balance probes remain verified:
+Earlier live-balance and quick-add verification on API 37 covered the following cases.
 
 | Action                                                   | Observed result                                                                                                        |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
