@@ -516,6 +516,7 @@ export default function App() {
           )}
           {screen === "budget" && ledger && (
             <BudgetScreen
+              error={error || syncError}
               ledger={ledger}
               busy={busy}
               sync={sync}
