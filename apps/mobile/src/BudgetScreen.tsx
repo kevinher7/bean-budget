@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { AppState, Pressable, Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { Schema } from "effect";
@@ -89,6 +89,8 @@ function ToggleList({
 }
 
 export function BudgetScreen({
+  widgetBudget,
+  draftGuard,
   ledger,
   busy,
   save,
@@ -98,6 +100,8 @@ export function BudgetScreen({
   createCategory,
   error,
 }: {
+  draftGuard: RefObject<boolean>;
+  widgetBudget?: { budget: string } | undefined;
   ledger: Ledger;
   error: string;
   busy: boolean;
@@ -107,7 +111,9 @@ export function BudgetScreen({
   retry: () => void;
   createCategory: (name: string) => void;
 }) {
-  const [selected, setSelected] = useState(ledger.planning.budgets[0]?.id ?? "");
+  const [selected, setSelected] = useState(
+    widgetBudget?.budget || ledger.planning.budgets[0]?.id || "",
+  );
   const [month, setMonth] = useState("");
   const [tools, setTools] = useState<"settings" | "create" | "schedules">();
   const budget =
@@ -223,6 +229,7 @@ export function BudgetScreen({
             />
           </View>
           <Period
+            draftGuard={draftGuard}
             key={budget.id + "/" + target}
             ledger={ledger}
             budget={budget}
@@ -251,6 +258,7 @@ export function BudgetScreen({
       </View>
       {tools && (
         <BudgetSheet
+          draftGuard={tools !== "settings" ? draftGuard : undefined}
           title={
             tools === "settings"
               ? "Budget settings"
@@ -578,6 +586,7 @@ type PeriodPanel =
   | { kind: "edit"; id: string; month: string };
 
 function Period({
+  draftGuard,
   ledger,
   budget,
   month,
@@ -587,6 +596,7 @@ function Period({
   save,
   createCategory,
 }: {
+  draftGuard: RefObject<boolean>;
   ledger: Ledger;
   budget: typeof Budget.Type;
   month: string;
@@ -759,6 +769,11 @@ function Period({
       </View>
       {panel && (
         <BudgetSheet
+          draftGuard={
+            ["edit", "allocation", "reserved", "payments"].includes(panel.kind)
+              ? draftGuard
+              : undefined
+          }
           title={
             panel.kind === "category" || panel.kind === "edit"
               ? (categoryName ?? "Uncategorized")

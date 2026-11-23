@@ -1,7 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
+    <activity android:name=".SpendingShortcutActivity" android:exported="false" android:noHistory="true"
+      android:excludeFromRecents="true" android:theme="@android:style/Theme.NoDisplay" />
+    <activity android:name=".SpendingWidgetConfiguration" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:exported="true" android:label="@string/bean_widget_choose">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+    </activity>
     <receiver android:name=".SpendingWidgetProvider" android:exported="false" android:label="@string/bean_widget_spending_name">
       <intent-filter>
+        <action android:name="android.intent.action.TIME_SET" />
+        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+        <action android:name="android.intent.action.DATE_CHANGED" />
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/bean_spending_square" />

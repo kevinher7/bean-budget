@@ -1,6 +1,6 @@
-import { Data, Effect, Schema } from "effect";
+import { Clock, Data, Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { balance, parseMoney, Currency } from "@bean-budget/budget";
+import { balance, parseMoney, tokyoDate, Currency } from "@bean-budget/budget";
 import {
   Account,
   Command,
@@ -22,6 +22,7 @@ import {
   planningKey,
   planningCommands,
   projectPlanning,
+  widgetAllowances,
   type PlanningCommand,
 } from "./planning.ts";
 import { loadConnection } from "./connection.ts";
@@ -101,7 +102,7 @@ const initializeDatabase = Effect.try({
       const version = database.getFirstSync<{ user_version: number }>(
         "PRAGMA user_version",
       )?.user_version;
-      if (version === 3 || version === 4 || version === 5) return;
+      if (version === 3 || version === 4 || version === 5 || version === 6 || version === 7) return;
       if (version === 2) {
         database.execSync(
           "CREATE TABLE metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=3;",
@@ -166,7 +167,22 @@ const initializeDatabase = Effect.try({
           database.execSync(
             `CREATE TRIGGER IF NOT EXISTS widget_${table}_${action.toLowerCase()} AFTER ${action} ON ${table} BEGIN INSERT INTO metadata(name,value) VALUES('widgetUpdatedAt',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(name) DO UPDATE SET value=excluded.value; END;`,
           );
-      database.execSync("PRAGMA user_version=5;");
+      if (
+        database.getFirstSync<{ user_version: number }>("PRAGMA user_version")?.user_version === 6
+      ) {
+        database.execSync("DROP TABLE IF EXISTS spending_widget_weeks");
+        for (const event of ["insert", "update", "delete"])
+          database.execSync(`DROP TRIGGER IF EXISTS invalidate_widget_calendar_${event}`);
+        database.runSync("DELETE FROM metadata WHERE name='widgetCalendarDate'");
+      }
+      for (const action of ["INSERT", "UPDATE", "DELETE"]) {
+        const source = action === "DELETE" ? "OLD" : "NEW";
+        database.execSync(`CREATE TRIGGER IF NOT EXISTS invalidate_widget_scope_${action.toLowerCase()}
+          AFTER ${action} ON metadata
+          WHEN ${source}.name IN ('widgetUpdatedAt','planning','deferredTransactions','serverUrl')
+          BEGIN DELETE FROM metadata WHERE name='widgetSpendingScope'; END;`);
+      }
+      database.execSync("PRAGMA user_version=7;");
     });
   },
   catch: (cause) => new LocalStorageError({ message: "Could not open local ledger", cause }),
@@ -333,6 +349,7 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
 });
 
 export const loadLedger = Effect.fn("loadLedger")(function* () {
+  const today = tokyoDate(yield* Clock.currentTimeMillis);
   const ledger = yield* Effect.try({
     try: () => {
       const queued = operations();
@@ -378,7 +395,7 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
       const linked = planning.occurrences.flatMap((row) =>
         row.transactionId ? [row.transactionId] : [],
       );
-      return {
+      const state = {
         accounts,
         transactions,
         planningConflict:
@@ -392,6 +409,43 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
         deferredTransactions: deferredTransactions(),
         planningOperations: queued.filter((row) => row.kind === "planning"),
       };
+      let widgetScopeFailed = false;
+      try {
+        const cached = database.getFirstSync<{ asOf: string }>(
+          "SELECT json_extract(value,'$.asOf') AS asOf FROM metadata WHERE name='widgetSpendingScope'",
+        );
+        if (cached?.asOf !== today) {
+          const budgets = state.planningConflict
+            ? []
+            : planning.budgets
+                .filter(
+                  (budget) =>
+                    !state.deferredTransactions.some((row) =>
+                      budget.accountIds.includes(row.accountId),
+                    ),
+                )
+                .map((budget) => {
+                  const { id, name, currency, accountIds } = budget;
+                  let allowances;
+                  try {
+                    allowances = widgetAllowances(planning, budget, transactions, today);
+                  } catch (error) {
+                    if (!(error instanceof RangeError)) throw error;
+                  }
+                  return { id, name, currency, accountIds, ...allowances };
+                });
+          const incomeIds = planning.occurrences
+            .filter((row) => row.amount > 0 && row.transactionId)
+            .map((row) => row.transactionId);
+          database.runSync(
+            "INSERT OR REPLACE INTO metadata(name,value) VALUES('widgetSpendingScope',?)",
+            JSON.stringify({ asOf: today, budgets, incomeIds }),
+          );
+        }
+      } catch {
+        widgetScopeFailed = true;
+      }
+      return { ...state, widgetScopeFailed };
     },
     catch: (cause) => new LocalStorageError({ message: "Could not read local ledger", cause }),
   });
@@ -399,7 +453,7 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
   return {
     ...ledger,
     widgetWarning:
-      widgets._tag === "Failure"
+      ledger.widgetScopeFailed || widgets._tag === "Failure"
         ? "Your register is saved. Widgets could not refresh. Reopen the app to retry."
         : null,
   };

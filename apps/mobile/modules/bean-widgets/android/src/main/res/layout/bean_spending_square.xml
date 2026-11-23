@@ -4,13 +4,15 @@
   android:layout_height="match_parent"
   android:background="@drawable/bean_spending_surface">
   <LinearLayout
+    android:id="@+id/bean_spending_totals"
+    android:visibility="gone"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:paddingStart="16dp"
     android:paddingEnd="16dp"
     android:paddingTop="8dp"
-    android:paddingBottom="8dp">
+    android:paddingBottom="14dp">
     <FrameLayout
       android:layout_width="match_parent"
       android:layout_height="0dp"
@@ -25,9 +27,9 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
         <TextView
-          android:layout_width="0dp"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:layout_weight="1"
+          android:maxLines="1"
           android:includeFontPadding="false"
           android:letterSpacing="0.125"
           android:text="@string/bean_widget_today"
@@ -36,11 +38,18 @@
           android:textStyle="bold" />
         <TextView
           android:id="@+id/bean_spending_today_amount"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:gravity="end|center_vertical"
+          android:layout_marginStart="3dp"
+          android:layout_height="28dp"
           android:includeFontPadding="false"
           android:maxLines="1"
           android:textColor="@color/bean_widget_text"
+          android:autoSizeTextType="uniform"
+          android:autoSizeMinTextSize="9sp"
+          android:autoSizeMaxTextSize="24sp"
+          android:autoSizeStepGranularity="1sp"
           android:textSize="24sp"
           android:textStyle="bold" />
       </LinearLayout>
@@ -65,9 +74,9 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
         <TextView
-          android:layout_width="0dp"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:layout_weight="1"
+          android:maxLines="1"
           android:includeFontPadding="false"
           android:letterSpacing="0.125"
           android:text="@string/bean_widget_week"
@@ -76,11 +85,18 @@
           android:textStyle="bold" />
         <TextView
           android:id="@+id/bean_spending_week_amount"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:gravity="end|center_vertical"
+          android:layout_marginStart="3dp"
+          android:layout_height="24dp"
           android:includeFontPadding="false"
           android:maxLines="1"
           android:textColor="@color/bean_widget_text"
+          android:autoSizeTextType="uniform"
+          android:autoSizeMinTextSize="9sp"
+          android:autoSizeMaxTextSize="20sp"
+          android:autoSizeStepGranularity="1sp"
           android:textSize="20sp"
           android:textStyle="bold" />
       </LinearLayout>
@@ -97,13 +113,24 @@
       android:layout_weight="1" />
   </LinearLayout>
   <TextView
-    android:layout_width="wrap_content"
+    android:id="@+id/bean_spending_heading"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_gravity="top|end"
-    android:layout_marginTop="2dp"
-    android:layout_marginEnd="12dp"
+    android:layout_gravity="center"
+    android:gravity="center"
+    android:text="@string/bean_widget_choose"
+    android:textColor="@color/bean_widget_text"
+    android:textStyle="bold" />
+  <TextView
+    android:id="@+id/bean_spending_status"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginBottom="2dp"
     android:includeFontPadding="false"
-    android:text="@string/bean_widget_demo"
+    android:singleLine="true"
+    android:ellipsize="end"
     android:textColor="@color/bean_widget_secondary"
-    android:textSize="8sp" />
+    android:textSize="9sp" />
 </FrameLayout>

@@ -36,6 +36,7 @@ import { loadConnection, saveConnection } from "./connection.ts";
 import { watchLedgerChanges } from "./sync.ts";
 import { pickBackupFile, saveBackupFile } from "./backup.ts";
 import { Action, Field, Heading, Label, Selection, TextAction } from "./ui/controls.tsx";
+import { requireOptionalNativeModule } from "expo";
 import { BudgetScreen } from "./BudgetScreen.tsx";
 import { colors, spacing } from "./ui/theme.ts";
 
@@ -67,7 +68,12 @@ export default function App() {
   const operationInProgress = useRef(true);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const [syncRequest, setSyncRequest] = useState<"automatic" | "manual">();
-  const [widgetRoute, setWidgetRoute] = useState<"entry" | "register">();
+  const [widgetRoute, setWidgetRoute] = useState<"entry" | "register" | { budget: string }>();
+  const budgetDraft = useRef(false);
+  const [widgetBudget, setWidgetBudget] = useState<{
+    budget: string;
+    visit: number;
+  }>();
   const [error, setError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [message, setMessage] = useState("");
@@ -164,10 +170,17 @@ export default function App() {
   }, [busy, connection, foreground, syncRequest]);
 
   useEffect(() => {
+    const widgets = requireOptionalNativeModule<{ takeBudgetShortcut?(): string | null }>(
+      "BeanWidgets",
+    );
     function openWidgetUrl(url: string | null | undefined) {
-      if (!url) return;
-      const route = url.split("://")[1];
+      const route = widgets?.takeBudgetShortcut?.() ?? url?.split("://")[1];
       if (route === "entry" || route === "register") setWidgetRoute(route);
+      else if (route === "budget") setWidgetRoute({ budget: "" });
+      else {
+        const match = /^budget\/([A-Za-z0-9_-]{1,100})$/.exec(route ?? "");
+        if (match?.[1]) setWidgetRoute({ budget: match[1] });
+      }
     }
     Linking.getInitialURL().then(openWidgetUrl, () =>
       setError("Could not open the widget shortcut. Open the register to add an entry."),
@@ -179,6 +192,16 @@ export default function App() {
   useEffect(() => {
     if (!widgetRoute || busy || !ledger) return;
     setWidgetRoute(undefined);
+    if (typeof widgetRoute === "object") {
+      if ((screen !== "register" && screen !== "budget") || budgetDraft.current) return;
+      const budget = ledger.planning.budgets.find((row) => row.id === widgetRoute.budget);
+      setWidgetBudget((previous) => ({
+        budget: budget?.id ?? "",
+        visit: (previous?.visit ?? 0) + 1,
+      }));
+      setScreen("budget");
+      return;
+    }
     if (screen !== "register") return;
     if (widgetRoute === "register") {
       setScreen("register");
@@ -321,7 +344,10 @@ export default function App() {
                 <TextAction
                   title="Budget"
                   disabled={busy || !ledger}
-                  onPress={() => setScreen("budget")}
+                  onPress={() => {
+                    setWidgetBudget(undefined);
+                    setScreen("budget");
+                  }}
                 />
                 <TextAction
                   title="New account"
@@ -474,7 +500,10 @@ export default function App() {
                             <TextAction
                               title="Review budget change"
                               disabled={busy}
-                              onPress={() => setScreen("budget")}
+                              onPress={() => {
+                                setWidgetBudget(undefined);
+                                setScreen("budget");
+                              }}
                             />
                           )}
                           {row.syncStatus === "failed" && !row.planningSyncError && (
@@ -516,6 +545,9 @@ export default function App() {
           )}
           {screen === "budget" && ledger && (
             <BudgetScreen
+              key={widgetBudget?.visit ?? 0}
+              widgetBudget={widgetBudget}
+              draftGuard={budgetDraft}
               error={error || syncError}
               ledger={ledger}
               busy={busy}

@@ -7,6 +7,8 @@ class BeanWidgetsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("BeanWidgets")
 
+    Function("takeBudgetShortcut") { pendingBudgetShortcut.getAndSet(null) }
+
     AsyncFunction("refresh") {
       val context = requireNotNull(appContext.reactContext) { "App context is unavailable" }
       BeanWidgets.refresh(context)

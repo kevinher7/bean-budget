@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode, type RefObject } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -31,18 +31,27 @@ export function dateRange(start: string, end: string) {
 }
 
 export function BudgetSheet({
+  draftGuard,
   title,
   children,
   close,
   busy,
   error,
 }: {
+  draftGuard?: RefObject<boolean> | undefined;
   title: string;
   children: ReactNode;
   close: () => void;
   busy: boolean;
   error: string;
 }) {
+  useEffect(() => {
+    if (!draftGuard) return;
+    draftGuard.current = true;
+    return () => {
+      draftGuard.current = false;
+    };
+  }, [draftGuard]);
   return (
     <Modal
       transparent
