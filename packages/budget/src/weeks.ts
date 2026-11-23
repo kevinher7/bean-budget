@@ -46,6 +46,17 @@ function shares(amount: number, weights: readonly number[]) {
   return values.map((value, index) => value + Number(index < extra));
 }
 
+function dailyAllowance(
+  week: { start: string; end: string; limit: number },
+  date: string,
+  spending: ReadonlyMap<string, number>,
+) {
+  const daysLeft = (Date.parse(week.end) - Date.parse(date)) / dayMs;
+  let previous = 0;
+  for (const [day, amount] of spending) if (day >= week.start && day < date) previous += amount;
+  return Math.ceil(Math.max(0, week.limit - previous) / daysLeft);
+}
+
 export function paceCategory(
   weeks: ReturnType<typeof periodWeeks>,
   funding: number,
@@ -53,6 +64,7 @@ export function paceCategory(
   spending: ReadonlyMap<string, number>,
   asOf: string,
   daily: boolean,
+  includeCalendar = false,
 ) {
   const baseline = shares(
     funding,
@@ -106,14 +118,22 @@ export function paceCategory(
   }
   if (daily) {
     const week = rows.find((row) => row.start <= asOf && asOf < row.end);
-    if (week) {
-      const daysLeft = (Date.parse(week.end) - Date.parse(asOf)) / dayMs;
-      let previous = 0;
-      for (const [date, amount] of spending)
-        if (date >= week.start && date < asOf) previous += amount;
-      week.leftToday =
-        Math.ceil(Math.max(0, week.limit - previous) / daysLeft) - (spending.get(asOf) ?? 0);
-    }
+    if (week) week.leftToday = dailyAllowance(week, asOf, spending) - (spending.get(asOf) ?? 0);
   }
-  return { weeks: rows, adjustment };
+  const calendar = includeCalendar
+    ? rows.map((week) => ({
+        start: week.start,
+        limit: week.limit,
+        daily: daily
+          ? Array.from({ length: week.days }, (_, index) =>
+              dailyAllowance(
+                week,
+                new Date(Date.parse(week.start) + index * dayMs).toISOString().slice(0, 10),
+                spending,
+              ),
+            )
+          : null,
+      }))
+    : undefined;
+  return { weeks: rows, adjustment, calendar };
 }

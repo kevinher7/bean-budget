@@ -1,60 +1,136 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/bean_spending_root"
   android:layout_width="match_parent"
   android:layout_height="match_parent"
-  android:orientation="vertical"
-  android:gravity="center_vertical"
-  android:paddingHorizontal="12dp"
-  android:paddingVertical="10dp"
   android:background="@drawable/bean_spending_surface">
-  <TextView
-    android:id="@+id/bean_spending_heading"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:maxLines="1"
-    android:ellipsize="end"
-    android:includeFontPadding="false"
-    android:textSize="13sp"
-    android:textColor="@color/bean_widget_text"
-    android:textStyle="bold"
-    android:text="@string/bean_widget_choose" />
   <LinearLayout
     android:id="@+id/bean_spending_totals"
+    android:visibility="gone"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:visibility="gone">
-    <TextView
-      android:id="@+id/bean_spending_amount"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:maxLines="1"
-      android:ellipsize="end"
-      android:includeFontPadding="false"
-      android:textSize="27sp"
-      android:textColor="@color/bean_widget_text"
-      android:textStyle="bold" />
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="14dp">
     <FrameLayout
-      android:layout_width="1dp"
-      android:layout_height="6dp" />
-    <TextView
-      android:id="@+id/bean_spending_week"
-      android:layout_width="wrap_content"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
+    <LinearLayout
+      android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:maxLines="1"
-      android:ellipsize="end"
-      android:includeFontPadding="false"
-      android:textSize="13sp"
-      android:textColor="@color/bean_widget_secondary" />
+      android:orientation="vertical">
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:maxLines="1"
+          android:includeFontPadding="false"
+          android:letterSpacing="0.125"
+          android:text="@string/bean_widget_today"
+          android:textColor="@color/bean_widget_secondary"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+        <TextView
+          android:id="@+id/bean_spending_today_amount"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:gravity="end|center_vertical"
+          android:layout_marginStart="3dp"
+          android:layout_height="28dp"
+          android:includeFontPadding="false"
+          android:maxLines="1"
+          android:textColor="@color/bean_widget_text"
+          android:autoSizeTextType="uniform"
+          android:autoSizeMinTextSize="9sp"
+          android:autoSizeMaxTextSize="24sp"
+          android:autoSizeStepGranularity="1sp"
+          android:textSize="24sp"
+          android:textStyle="bold" />
+      </LinearLayout>
+      <LinearLayout
+        android:id="@+id/bean_spending_today_bar"
+        android:layout_width="match_parent"
+        android:layout_height="22dp"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal" />
+    </LinearLayout>
+    <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical">
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:maxLines="1"
+          android:includeFontPadding="false"
+          android:letterSpacing="0.125"
+          android:text="@string/bean_widget_week"
+          android:textColor="@color/bean_widget_secondary"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+        <TextView
+          android:id="@+id/bean_spending_week_amount"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:gravity="end|center_vertical"
+          android:layout_marginStart="3dp"
+          android:layout_height="24dp"
+          android:includeFontPadding="false"
+          android:maxLines="1"
+          android:textColor="@color/bean_widget_text"
+          android:autoSizeTextType="uniform"
+          android:autoSizeMinTextSize="9sp"
+          android:autoSizeMaxTextSize="20sp"
+          android:autoSizeStepGranularity="1sp"
+          android:textSize="20sp"
+          android:textStyle="bold" />
+      </LinearLayout>
+      <LinearLayout
+        android:id="@+id/bean_spending_week_bar"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal" />
+    </LinearLayout>
+    <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
   </LinearLayout>
   <TextView
-    android:id="@+id/bean_spending_status"
-    android:layout_width="wrap_content"
+    android:id="@+id/bean_spending_heading"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:maxLines="1"
-    android:ellipsize="end"
+    android:layout_gravity="center"
+    android:gravity="center"
+    android:text="@string/bean_widget_choose"
+    android:textColor="@color/bean_widget_text"
+    android:textStyle="bold" />
+  <TextView
+    android:id="@+id/bean_spending_status"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginBottom="2dp"
     android:includeFontPadding="false"
-    android:textSize="11sp"
-    android:textColor="@color/bean_widget_secondary" />
-</LinearLayout>
+    android:singleLine="true"
+    android:ellipsize="end"
+    android:textColor="@color/bean_widget_secondary"
+    android:textSize="9sp" />
+</FrameLayout>

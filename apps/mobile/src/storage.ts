@@ -1,6 +1,6 @@
-import { Data, Effect, Schema } from "effect";
+import { Clock, Data, Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { balance, parseMoney, Currency } from "@bean-budget/budget";
+import { balance, parseMoney, tokyoDate, Currency } from "@bean-budget/budget";
 import {
   Account,
   Command,
@@ -22,6 +22,7 @@ import {
   planningKey,
   planningCommands,
   projectPlanning,
+  widgetAllowances,
   type PlanningCommand,
 } from "./planning.ts";
 import { loadConnection } from "./connection.ts";
@@ -348,6 +349,7 @@ export const restoreBackup = Effect.fn("restoreBackup")(function* (
 });
 
 export const loadLedger = Effect.fn("loadLedger")(function* () {
+  const today = tokyoDate(yield* Clock.currentTimeMillis);
   const ledger = yield* Effect.try({
     try: () => {
       const queued = operations();
@@ -409,23 +411,37 @@ export const loadLedger = Effect.fn("loadLedger")(function* () {
       };
       let widgetScopeFailed = false;
       try {
-        const budgets = state.planningConflict
-          ? []
-          : planning.budgets
-              .filter(
-                (budget) =>
-                  !state.deferredTransactions.some((row) =>
-                    budget.accountIds.includes(row.accountId),
-                  ),
-              )
-              .map(({ id, name, currency, accountIds }) => ({ id, name, currency, accountIds }));
-        const incomeIds = planning.occurrences
-          .filter((row) => row.amount > 0 && row.transactionId)
-          .map((row) => row.transactionId);
-        database.runSync(
-          "INSERT INTO metadata(name,value) VALUES('widgetSpendingScope',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
-          JSON.stringify({ budgets, incomeIds }),
+        const cached = database.getFirstSync<{ asOf: string }>(
+          "SELECT json_extract(value,'$.asOf') AS asOf FROM metadata WHERE name='widgetSpendingScope'",
         );
+        if (cached?.asOf !== today) {
+          const budgets = state.planningConflict
+            ? []
+            : planning.budgets
+                .filter(
+                  (budget) =>
+                    !state.deferredTransactions.some((row) =>
+                      budget.accountIds.includes(row.accountId),
+                    ),
+                )
+                .map((budget) => {
+                  const { id, name, currency, accountIds } = budget;
+                  let allowances;
+                  try {
+                    allowances = widgetAllowances(planning, budget, transactions, today);
+                  } catch (error) {
+                    if (!(error instanceof RangeError)) throw error;
+                  }
+                  return { id, name, currency, accountIds, ...allowances };
+                });
+          const incomeIds = planning.occurrences
+            .filter((row) => row.amount > 0 && row.transactionId)
+            .map((row) => row.transactionId);
+          database.runSync(
+            "INSERT OR REPLACE INTO metadata(name,value) VALUES('widgetSpendingScope',?)",
+            JSON.stringify({ asOf: today, budgets, incomeIds }),
+          );
+        }
       } catch {
         widgetScopeFailed = true;
       }

@@ -16,6 +16,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.DayOfWeek
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private val tokyo = ZoneId.of("Asia/Tokyo")
 private val dateLabel = DateTimeFormatter.ofPattern("MMM d", Locale.US)
@@ -28,7 +29,7 @@ internal val spendingLayouts = mapOf(
 
 internal data class BudgetSpending(
   val id: String, val name: String, val currency: String, val todaySpent: Long,
-  val weekSpent: Long, val server: String?
+  val weekSpent: Long, val server: String?, val dayLimit: Long?, val weekLimit: Long?
 )
 
 internal fun spendingToday(context: Context, today: LocalDate): List<BudgetSpending> {
@@ -54,13 +55,15 @@ internal fun spendingToday(context: Context, today: LocalDate): List<BudgetSpend
       )
       SELECT json_extract(budget,'$.id'), json_extract(budget,'$.name'), json_extract(budget,'$.currency'),
              SUM(CASE WHEN day=? THEN spent ELSE 0 END), COALESCE(SUM(spent),0),
-             (SELECT value FROM metadata WHERE name='serverUrl')
+             (SELECT value FROM metadata WHERE name='serverUrl'),
+             json_extract(budget,'$.daily.' || ?), json_extract(budget,'$.weekly.' || ?)
       FROM budgets LEFT JOIN spending ON account IN (SELECT value FROM json_each(budget,'$.accountIds'))
       GROUP BY budget ORDER BY json_extract(budget,'$.name') COLLATE NOCASE, json_extract(budget,'$.id')
-    """.trimIndent(), arrayOf(monday.toString(), today.toString(), today.toString())).use { cursor ->
+    """.trimIndent(), arrayOf(monday.toString(), today.toString(), today.toString(), today.toString(), monday.toString())).use { cursor ->
       buildList {
         while (cursor.moveToNext()) add(BudgetSpending(cursor.getString(0), cursor.getString(1),
-          cursor.getString(2), cursor.getLong(3), cursor.getLong(4), cursor.getString(5)))
+          cursor.getString(2), cursor.getLong(3), cursor.getLong(4), cursor.getString(5),
+          if (cursor.isNull(6)) null else cursor.getLong(6), if (cursor.isNull(7)) null else cursor.getLong(7)))
       }
     }
   }
@@ -90,6 +93,7 @@ fun updateSpendingWidgets(context: Context, manager: AppWidgetManager) {
       else choices?.find { it.id == budget && (server == null || it.server == server) }
     val views = RemoteViews(context.packageName, layout)
     views.setViewVisibility(R.id.bean_spending_totals, if (row == null) View.GONE else View.VISIBLE)
+    views.setViewVisibility(R.id.bean_spending_heading, if (row == null) View.VISIBLE else View.GONE)
     if (row == null) {
       views.setTextViewText(R.id.bean_spending_heading, if (budget == null) "Choose a budget" else "Spending unavailable")
       views.setTextViewText(R.id.bean_spending_status, if (choices.isNullOrEmpty()) "Open Bean Budget to refresh" else "Tap to choose a budget")
@@ -101,13 +105,48 @@ fun updateSpendingWidgets(context: Context, manager: AppWidgetManager) {
       if (budget == null || (server == null && row.server != null))
         prefs.edit().putString("budget/$id", row.id).putString("server/$id", row.server).apply()
       views.setOnClickPendingIntent(R.id.bean_spending_root, BeanWidgets.openApp(context, "budget/${Uri.encode(row.id)}"))
-      views.setTextViewText(R.id.bean_spending_heading, "Spent today")
-      views.setTextViewText(R.id.bean_spending_amount, BeanWidgets.money(row.todaySpent, row.currency))
-      views.setTextViewText(R.id.bean_spending_week, "This week  " + BeanWidgets.money(row.weekSpent, row.currency))
-      views.setTextViewText(R.id.bean_spending_status, "${dateLabel.format(today)} · ${row.name}")
+      renderSpending(context, views, row.currency, row.todaySpent, row.dayLimit, null,
+        R.id.bean_spending_today_amount, R.id.bean_spending_today_bar)
+      renderSpending(context, views, row.currency, row.weekSpent, row.weekLimit, today.dayOfWeek.value / 7.0,
+        R.id.bean_spending_week_amount, R.id.bean_spending_week_bar)
+      views.setTextViewText(R.id.bean_spending_status, "Spent · ${dateLabel.format(today)} · ${row.name}")
     }
     manager.updateAppWidget(id, views)
   }
+}
+
+private fun renderSpending(
+  context: Context, views: RemoteViews, currency: String, spent: Long, limit: Long?, pace: Double?,
+  amountId: Int, barId: Int
+) {
+  val amount = BeanWidgets.money(spent, currency)
+  views.setTextViewText(amountId, amount)
+  val over = limit != null && spent > limit
+  views.setTextColor(amountId, context.getColor(context.resources.getIdentifier(
+    if (over) "bean_widget_error" else "bean_widget_text", "color", context.packageName)))
+  val fraction = when {
+    limit == null -> 0.0
+    limit > 0 -> spent.toDouble() / limit
+    over -> 1.0
+    else -> 0.0
+  }
+  val filled = (fraction.coerceIn(0.0, 1.0) * 10).roundToInt()
+  val elapsed = if (limit != null && limit > 0 && pace != null) (pace * 10).roundToInt() else 0
+  val fill = if (over || (pace != null && fraction > pace)) R.drawable.bean_spending_segment_error
+    else R.drawable.bean_spending_segment_primary
+  views.removeAllViews(barId)
+  for (index in 0 until 10) {
+    if (index > 0) views.addView(barId, RemoteViews(context.packageName, R.layout.bean_spending_gap))
+    val segment = RemoteViews(context.packageName, R.layout.bean_spending_segment)
+    segment.setInt(R.id.bean_spending_segment, "setBackgroundResource", when {
+      index < filled -> fill
+      index < elapsed -> R.drawable.bean_spending_segment_selected
+      else -> R.drawable.bean_spending_segment_outline
+    })
+    views.addView(barId, segment)
+  }
+  views.setContentDescription(barId, if (limit == null) "No planned allowance"
+    else "$amount spent against a ${BeanWidgets.money(limit, currency)} allowance")
 }
 
 open class SpendingWidgetProvider : BeanWidgetProvider() {

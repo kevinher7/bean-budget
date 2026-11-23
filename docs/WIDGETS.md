@@ -11,9 +11,11 @@ Bean Budget includes two budget spending widgets, a quick-add shortcut and a liv
 
 ## Choose a budget
 
-Choose a budget when placing a widget. A single available budget is selected automatically. Both sizes show **Spent today** across the budget's accounts and the week-to-date total since Monday. The Tokyo date and budget name appear below the amounts. Tapping opens the budget overview.
+Choose a budget when placing a widget. A single available budget is selected automatically. The square widget stacks TODAY and WEEK over ten-segment bars. The wide widget puts each label, bar and amount on one row. Both amounts show net spending across the budget’s accounts. WEEK starts on Monday. The Tokyo date and budget name appear below the amounts. Tapping opens the budget overview.
 
 Pending and posted purchases count once, including uncategorized purchases and actual bill payments. Categorized refunds reduce spending on the refund date. Income, transfers, opening balances, and scheduled estimates are excluded. Category allocations and planning rhythms have no effect on these totals.
+
+The TODAY bar compares total spending with the sum of the day’s planned allowances for daily categories. WEEK uses the combined limits of daily and weekly categories, including both parts of a calendar week split by a budget boundary. Monthly-only allocations contribute no daily or weekly target. The lighter weekly segments mark elapsed days. Spending above weekly pace or above a daily allowance uses the warning color. With no applicable plan the bar shows empty segments. The app prepares six calendar weeks of targets when reading the register. After those dates, the widget still shows live spending and resumes displaying targets when the app opens.
 
 ## Storage and lifecycle
 

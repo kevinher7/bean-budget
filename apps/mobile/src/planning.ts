@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { monthStart, nextMonth, summarizePeriods, tokyoDate } from "@bean-budget/budget";
+import { balance, monthStart, nextMonth, summarizePeriods, tokyoDate } from "@bean-budget/budget";
 import { Command, Planning, Transaction } from "@bean-budget/protocol";
 
 export const emptyPlanning: typeof Planning.Type = {
@@ -132,6 +132,7 @@ export function periodSummary(
   month: string,
   transactions: readonly (typeof Transaction.Type)[],
   asOf = tokyoDate(Date.now()),
+  includeCalendar = false,
 ) {
   const budget = state.budgets.find((row) => row.id === budgetId);
   if (!budget || month < budget.firstMonth) throw new Error("Select a period within this budget");
@@ -141,6 +142,7 @@ export function periodSummary(
     transactions.filter((row) => budget.accountIds.includes(row.accountId)),
     { plans: state.periods, occurrences: state.occurrences, reservations: state.reservations },
     asOf,
+    includeCalendar,
   );
 }
 
@@ -183,4 +185,49 @@ export function planningKey(command: PlanningCommand) {
     case "match":
       return `occurrence/${command.occurrenceId}`;
   }
+}
+
+function mondayOf(date: string) {
+  const monday = new Date(date);
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  return monday.toISOString().slice(0, 10);
+}
+
+export function widgetAllowances(
+  state: typeof Planning.Type,
+  budget: (typeof Planning.Type.budgets)[number],
+  transactions: readonly (typeof Transaction.Type)[],
+  today: string,
+) {
+  const daily: Record<string, number> = {};
+  const weekly: Record<string, number> = {};
+  const start = mondayOf(today);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 42);
+  const through = end.toISOString().slice(0, 10);
+  let month = start.slice(0, 7);
+  if (start < monthStart(month, budget.startDay)) {
+    const previous = new Date(month + "-01T00:00:00Z");
+    previous.setUTCMonth(previous.getUTCMonth() - 1);
+    month = previous.toISOString().slice(0, 7);
+  }
+  for (; monthStart(month, budget.startDay) < through; month = nextMonth(month)) {
+    if (month < budget.firstMonth) continue;
+    const close = monthStart(nextMonth(month), budget.startDay);
+    const summary = periodSummary(state, budget.id, month, transactions, close, true);
+    for (const weeks of Object.values(summary?.calendars ?? {})) {
+      for (const week of weeks) {
+        if (week.start < start || week.start >= through) continue;
+        const date = new Date(week.start);
+        const key = mondayOf(week.start);
+        weekly[key] = balance([weekly[key] ?? 0, week.limit]);
+        for (const allowance of week.daily ?? []) {
+          const key = date.toISOString().slice(0, 10);
+          daily[key] = balance([daily[key] ?? 0, allowance]);
+          date.setUTCDate(date.getUTCDate() + 1);
+        }
+      }
+    }
+  }
+  return { daily, weekly };
 }
