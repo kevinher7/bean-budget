@@ -36,7 +36,7 @@
     "check:layout": "node tools/check-layout.mts"
   },
   "dependencies": {
-    "effect": "4.1.2"
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.5",

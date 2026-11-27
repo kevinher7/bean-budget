@@ -6,6 +6,6 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@bean-budget/budget": "*",
-    "effect": "4.1.2"
+    "effect": "4.1.4"
   }
 }
